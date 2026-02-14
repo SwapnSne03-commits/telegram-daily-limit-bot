@@ -29,25 +29,39 @@ DEFAULT_LIMIT = 4
 
 # ---------------- LOAD / SAVE ----------------
 def load_data():
-    if not os.path.exists(DATA_FILE):
-        return {
-            "limits": {},
-            "warn_limits": {},
-            "mute_settings": {},
-            "alert_settings": {},
-            "enabled_chats": [],
-            "super_admins": [],
-            "permissions": {},
-            "log_channel": "",
-            "user_data": {},
-            "messages": {
-                "warn": "Warning!",
-                "limit": "Daily limit crossed.",
-                "mute": "{name} muted for {duration} seconds."
-            }
+    default_data = {
+        "limits": {},
+        "warn_limits": {},
+        "mute_settings": {},
+        "alert_settings": {},
+        "reset_time": 86400,
+        "enabled_chats": [],
+        "super_admins": [],
+        "permissions": {},
+        "log_channel": "",
+        "user_data": {},
+        "messages": {
+            "warn": "Warning!",
+            "limit": "Daily limit crossed.",
+            "mute": "{name} muted for {duration} seconds."
         }
+    }
+
+    if not os.path.exists(DATA_FILE):
+        return default_data
+
     with open(DATA_FILE, "r") as f:
-        return json.load(f)
+        try:
+            data = json.load(f)
+        except:
+            return default_data
+
+    # Auto-fix missing keys
+    for key, value in default_data.items():
+        if key not in data:
+            data[key] = value
+
+    return data
 
 def save_data():
     with open(DATA_FILE, "w") as f:
