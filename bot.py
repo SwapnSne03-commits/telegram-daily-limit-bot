@@ -313,7 +313,14 @@ async def main():
     app.add_handler(CommandHandler("setlog", setlog))
     app.add_handler(CommandHandler("panel", panel))
 
-    await app.run_polling()
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+    await app.updater.idle()
+    await app.stop()
+    await app.shutdown()
 
-import asyncio
-asyncio.run(main())
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
