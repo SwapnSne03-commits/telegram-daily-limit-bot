@@ -291,9 +291,14 @@ async def panel(update, context):
 
 # ---------------- MAIN ----------------
 # ---------------- MAIN ----------------
+import asyncio
+
 def main():
     if not TOKEN:
         raise ValueError("BOT_TOKEN environment variable not set")
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
     app = ApplicationBuilder().token(TOKEN).build()
 
