@@ -1,5 +1,6 @@
 import json
 import os
+import asyncio
 from datetime import date, datetime, timedelta
 from telegram import Update, ChatPermissions
 from telegram.ext import (
@@ -32,6 +33,7 @@ def load_data():
             "limits": {},
             "warn_limits": {},
             "mute_settings": {},
+            "alert_settings": {},
             "enabled_chats": [],
             "super_admins": [],
             "permissions": {},
@@ -70,6 +72,23 @@ def has_permission(chat_id, uid):
             return True
     return False
 
+# Auto Mute Setting 
+async def setalerttime(update, context):
+    if not has_permission(update.effective_chat.id, update.effective_user.id):
+        return
+
+    chat_id = str(update.effective_chat.id)
+
+    try:
+        seconds = int(context.args[0])
+    except:
+        await update.message.reply_text("Usage: /setalerttime 30")
+        return
+
+    data["alert_settings"][chat_id] = seconds
+    save_data()
+
+    await update.message.reply_text(f"Alert auto-delete time set to {seconds} seconds.")
 # ---------------- LOG ----------------
 async def log_action(context, text):
     if data["log_channel"]:
@@ -121,30 +140,72 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await log_action(context, f"WARN → {name}")
 
     # LIMIT CROSS
+    # LIMIT CROSS
     if u["count"] == limit + 1:
-        await update.message.reply_text(data["messages"]["limit"])
-        await log_action(context, f"LIMIT CROSS → {name}")
+
+        # Delete user's extra message
+        try:
+            await update.message.delete()
+        except:
+            pass
+
+        mute_enabled = False
+        duration = 0
 
         if chat_id in data["mute_settings"]:
             m = data["mute_settings"][chat_id]
             if m["enabled"]:
+                mute_enabled = True
                 duration = m["duration"]
-                until = datetime.utcnow() + timedelta(seconds=duration)
 
+        mention = f"<a href='tg://user?id={user_id}'>{name}</a>"
+
+        alert_text = (
+            f"🚫 <b>ʀᴇǫᴜᴇsᴛ ʟɪᴍɪᴛ ᴇxᴄᴇᴇᴅᴇᴅ</b>\n\n"
+            f"👤 ᴜsᴇʀ: {mention}\n"
+            f"📌 ᴅᴀɪʟʏ ʟɪᴍɪᴛ: <code>{limit}</code> ᴍᴇssᴀɢᴇs</b>\n"
+        )
+
+        if mute_enabled:
+            alert_text += f"🔇 ᴍᴜᴛᴇᴅ for: <b>{duration}</b> seconds\n"
+
+        alert_text += "\nPlease wait 24 hours before sending more messages."
+
+        sent_msg = await context.bot.send_message(
+            chat_id=int(chat_id),
+            text=alert_text,
+            parse_mode="HTML",
+            disable_web_page_preview=True
+        )
+
+        await log_action(context, f"LIMIT CROSS → {name}")
+
+        # Apply mute if enabled
+        if mute_enabled:
+            until = datetime.utcnow() + timedelta(seconds=duration)
+
+            try:
                 await context.bot.restrict_chat_member(
                     int(chat_id),
                     int(user_id),
                     ChatPermissions(can_send_messages=False),
                     until_date=until
                 )
+            except:
+                pass
 
-                mute_text = data["messages"]["mute"].format(
-                    name=name,
-                    duration=duration
-                )
+            await log_action(context, f"MUTED → {name}")
 
-                await update.message.reply_text(mute_text)
-                await log_action(context, f"MUTED → {name}")
+        # Auto delete alert using job_queue (non-blocking)
+        alert_delete_time = data["alert_settings"].get(chat_id, 30)
+
+        async def delete_alert(context):
+            try:
+                await sent_msg.delete()
+            except:
+                pass
+
+        context.job_queue.run_once(delete_alert, alert_delete_time)
 
 # ---------------- USER STATS ----------------
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -332,6 +393,7 @@ def main():
     app.add_handler(CommandHandler("setmutetime", setmutetime))
     app.add_handler(CommandHandler("setlog", setlog))
     app.add_handler(CommandHandler("panel", panel))
+    app.add_handler(CommandHandler("setalerttime", setalerttime))
 
     print("Bot is starting...")
     app.run_polling()
