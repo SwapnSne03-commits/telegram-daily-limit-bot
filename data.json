@@ -1,0 +1,15 @@
+{
+  "limits": {},
+  "warn_limits": {},
+  "mute_settings": {},
+  "enabled_chats": [],
+  "super_admins": ["7859995064"],
+  "permissions": {},
+  "log_channel": "",
+  "user_data": {},
+  "messages": {
+    "warn": "Warning!",
+    "limit": "Daily limit crossed.",
+    "mute": "{name} muted for {duration} seconds."
+  }
+}
