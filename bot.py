@@ -9,6 +9,17 @@ from telegram.ext import (
     ContextTypes,
     filters
 )
+from flask import Flask
+import threading
+
+app_web = Flask(__name__)
+
+@app_web.route("/")
+def home():
+    return "Bot is running"
+
+def run_web():
+    app_web.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
 
 TOKEN = os.getenv("BOT_TOKEN")
 DATA_FILE = "data.json"
@@ -327,4 +338,5 @@ def main():
 
 
 if __name__ == "__main__":
+    threading.Thread(target=run_web).start()
     main()
