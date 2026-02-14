@@ -290,7 +290,11 @@ async def panel(update, context):
     )
 
 # ---------------- MAIN ----------------
-async def main():
+# ---------------- MAIN ----------------
+def main():
+    if not TOKEN:
+        raise ValueError("BOT_TOKEN environment variable not set")
+
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, bot_added))
@@ -313,9 +317,9 @@ async def main():
     app.add_handler(CommandHandler("setlog", setlog))
     app.add_handler(CommandHandler("panel", panel))
 
-    await app.run_polling()
+    print("Bot is starting...")
+    app.run_polling()
 
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    main()
