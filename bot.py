@@ -1,6 +1,7 @@
 import json
 import os
 import asyncio
+import html
 from datetime import date, datetime, timedelta
 from telegram import Update, ChatPermissions
 from telegram.ext import (
@@ -158,18 +159,19 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 mute_enabled = True
                 duration = m["duration"]
 
-        mention = f"<a href='tg://user?id={user_id}'>{name}</a>"
+        safe_name = html.escape(name)
+        mention = f"<a href=\"tg://user?id={user_id}\">{safe_name}</a>"
 
         alert_text = (
             f"🚫 <b>ʀᴇǫᴜᴇsᴛ ʟɪᴍɪᴛ ᴇxᴄᴇᴇᴅᴇᴅ</b>\n\n"
-            f"👤 ᴜsᴇʀ: {mention}\n"
-            f"📌 ᴅᴀɪʟʏ ʟɪᴍɪᴛ: <code>{limit}</code> ᴍᴇssᴀɢᴇs</b>\n"
+            f"👤 <b>ᴜsᴇʀ:</b> {mention}\n"
+            f"📌 <b>ᴅᴀɪʟʏ ʟɪᴍɪᴛ:</b> <code>{limit}</code> <b>ᴍᴇssᴀɢᴇs</b>\n"
         )
 
         if mute_enabled:
-            alert_text += f"🔇 <b>ᴍᴜᴛᴇᴅ ғᴏʀ: <code>{duration}</code> sᴇᴄᴏɴᴅs</b>\n"
+            alert_text += f"🔇 <b>ᴍᴜᴛᴇᴅ ғᴏʀ:</b> <code>{duration}</code> <b>sᴇᴄᴏɴᴅs</b>\n"
 
-        alert_text += "\n<b>ᴘʟᴇᴀsᴇ ᴡᴀɪᴛ <code>{duration}</code> sᴇᴄᴏɴᴅs ʙᴇғᴏʀᴇ ʀᴇǫᴜᴇsᴛɪɴɢ ᴀɢᴀɪɴ."
+        alert_text += "\n<b>ʏᴏᴜʀ ᴛᴏᴅᴀʏ's ʀʀǫᴜᴇsᴛ ǫᴜᴏᴛᴀ ɪs ᴏᴠᴇʀ, ɴᴏ ᴍᴏʀᴇ ʀʀǫᴜᴇsᴛ ᴡɪʟʟ ᴀʟʟᴏᴡᴇᴅ ɴᴏᴡ</b>."
 
         sent_msg = await context.bot.send_message(
             chat_id=int(chat_id),
