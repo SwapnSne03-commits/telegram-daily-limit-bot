@@ -167,9 +167,9 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         if mute_enabled:
-            alert_text += f"🔇 ᴍᴜᴛᴇᴅ for: <b>{duration}</b> seconds\n"
+            alert_text += f"🔇 <b>ᴍᴜᴛᴇᴅ ғᴏʀ: <code>{duration}</code> sᴇᴄᴏɴᴅs</b>\n"
 
-        alert_text += "\nPlease wait 24 hours before sending more messages."
+        alert_text += "\n<b>ᴘʟᴇᴀsᴇ ᴡᴀɪᴛ <code>{duration}</code> sᴇᴄᴏɴᴅs ʙᴇғᴏʀᴇ ʀᴇǫᴜᴇsᴛɪɴɢ ᴀɢᴀɪɴ."
 
         sent_msg = await context.bot.send_message(
             chat_id=int(chat_id),
