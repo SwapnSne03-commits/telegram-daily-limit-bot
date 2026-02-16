@@ -452,13 +452,27 @@ async def ext_lim(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def mute_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
         return
+
+    if not context.args:
+        await update.message.reply_text("Usage: /Mute on/off")
+        return
+
     status = context.args[0].lower()
+
+    if status not in ["on", "off"]:
+        await update.message.reply_text("Usage: /Mute on/off")
+        return
+
     group_id = update.effective_chat.id
     value = 1 if status == "on" else 0
+
     cur.execute("UPDATE groups SET mute_enabled=? WHERE group_id=?",
                 (value, group_id))
     conn.commit()
-    await update.message.reply_text(f"Mute {'enabled' if value else 'disabled'}.")
+
+    await update.message.reply_text(
+        f"Mute {'enabled' if value else 'disabled'}."
+    )
 
 async def set_mute(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
@@ -486,6 +500,10 @@ async def rem_limit(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def renew(update: Update, context: ContextTypes.DEFAULT_TYPE):
     group_id = update.effective_chat.id
 
+    if not context.args:
+        await update.message.reply_text("Usage: /renew [id/all]")
+        return
+
     if context.args[0].lower() == "all":
         if update.effective_user.id != OWNER_ID:
             return
@@ -493,7 +511,12 @@ async def renew(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.commit()
         await update.message.reply_text("All users renewed.")
     else:
-        user_id = int(context.args[0])
+        try:
+            user_id = int(context.args[0])
+        except:
+            await update.message.reply_text("Invalid user ID.")
+            return
+
         cur.execute("""
         UPDATE users SET message_count=0
         WHERE user_id=? AND group_id=?
@@ -510,14 +533,6 @@ async def grp_setting(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 (new_limit, group_id))
     conn.commit()
     await update.message.reply_text(f"Group limit set to {new_limit}.")
-
-async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != OWNER_ID:
-        return
-    group_id = int(context.args[0])
-    cur.execute("INSERT OR IGNORE INTO groups(group_id) VALUES(?)", (group_id,))
-    conn.commit()
-    await update.message.reply_text("Group authorized.")
 
 async def cmd_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -565,7 +580,7 @@ def main():
     application.add_handler(CommandHandler("cmd", cmd_list))
     application.add_handler(MessageHandler(filters.StatusUpdate.MY_CHAT_MEMBER, bot_added))
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("Add_grp", add_group))
+    application.add_handler(CommandHandler("up_admin", up_admin))
 
     application.run_webhook(
         listen="0.0.0.0",
