@@ -17,6 +17,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 OWNER_ID = int(os.getenv("OWNER_ID"))
 PORT = int(os.environ.get("PORT", 10000))
 RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")
+LOG_CHAT_ID = int(os.getenv("LOG_CHAT_ID"))
 
 # ---------------- DATABASE ----------------
 
@@ -29,6 +30,12 @@ CREATE TABLE IF NOT EXISTS groups (
     message_limit INTEGER DEFAULT 3,
     mute_enabled INTEGER DEFAULT 1,
     mute_time TEXT DEFAULT '5m'
+)
+""")
+
+cur.execute("""
+CREATE TABLE IF NOT EXISTS stats_admins (
+    user_id INTEGER PRIMARY KEY
 )
 """)
 
@@ -46,6 +53,14 @@ CREATE TABLE IF NOT EXISTS users (
 """)
 
 conn.commit()
+
+# ---------------- LOGGING ----------------
+
+async def send_log(context: ContextTypes.DEFAULT_TYPE, text: str):
+    try:
+        await context.bot.send_message(chat_id=LOG_CHAT_ID, text=text)
+    except:
+        pass
 
 # ---------------- HELPERS ----------------
 
@@ -76,6 +91,106 @@ def reset_if_new_day(user_id, group_id):
         WHERE user_id=? AND group_id=?
         """, (today, user_id, group_id))
         conn.commit()
+
+def is_up_admin(user_id):
+    if user_id == OWNER_ID:
+        return True
+    cur.execute("SELECT user_id FROM stats_admins WHERE user_id=?", (user_id,))
+    return cur.fetchone() is not None
+
+async def ext_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_up_admin(update.effective_user.id):
+        return
+
+    group_id = update.effective_chat.id
+    message = update.message
+
+    target_id = None
+    target_name = None
+    new_limit = None
+
+    # ---- Case 1: Reply ----
+    if message.reply_to_message:
+        target = message.reply_to_message.from_user
+        target_id = target.id
+        target_name = target.full_name
+
+        if not context.args:
+            await message.reply_text("Usage: reply + /ext_up [limit]")
+            return
+
+        try:
+            new_limit = int(context.args[0])
+        except:
+            await message.reply_text("Invalid limit value.")
+            return
+
+    # ---- Case 2: Mention entity ----
+    elif message.entities:
+        for entity in message.entities:
+            if entity.type == "text_mention":
+                target_id = entity.user.id
+                target_name = entity.user.full_name
+                break
+            elif entity.type == "mention":
+                mention_text = message.text[entity.offset: entity.offset + entity.length]
+                username_only = mention_text.replace("@", "")
+
+                cur.execute("SELECT user_id FROM users WHERE group_id=?", (group_id,))
+                all_users = cur.fetchall()
+
+                for (uid,) in all_users:
+                    try:
+                        chat_member = await context.bot.get_chat_member(group_id, uid)
+                        if chat_member.user.username == username_only:
+                            target_id = uid
+                            target_name = chat_member.user.full_name
+                            break
+                    except:
+                        continue
+                if target_id:
+                    break
+
+        if not target_id:
+            await message.reply_text("User not found.")
+            return
+
+        # Extract limit from args (last argument)
+        if context.args:
+            try:
+                new_limit = int(context.args[-1])
+            except:
+                await message.reply_text("Invalid limit value.")
+                return
+        else:
+            await message.reply_text("Usage: /ext_up @user [limit]")
+            return
+
+    # ---- Case 3: ID দিয়ে ----
+    elif context.args and len(context.args) >= 2:
+        try:
+            target_id = int(context.args[0])
+            new_limit = int(context.args[1])
+            target_name = str(target_id)
+        except:
+            await message.reply_text("Usage: /ext_up [id] [limit]")
+            return
+
+    else:
+        await message.reply_text("Usage: reply বা /ext_up [id/@mention] [limit]")
+        return
+
+    # ---- Apply Extended Limit ----
+    cur.execute("""
+    UPDATE users SET extended_limit=?
+    WHERE user_id=? AND group_id=?
+    """, (new_limit, target_id, group_id))
+
+    conn.commit()
+
+    await message.reply_text(
+        f"✅ {target_name} এর নতুন limit set করা হয়েছে: {new_limit}"
+        )
 
 def get_limit(user_id, group_id):
     cur.execute("SELECT message_limit FROM groups WHERE group_id=?", (group_id,))
@@ -140,7 +255,7 @@ async def track_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Warning before max
     if count == limit:
         await update.message.reply_html(
-            f"⚠️ {user.mention_html()} আর ১টা মেসেজ করলে limit শেষ হবে!"
+            f"⚠️ <b>প্রিয় {user.mention_html()},\nআপনি কেবলমাত্র আর ১টি মুভি/সিরিজ রিকোয়েস্ট করতে পারবেন!\n\nধন্যবাদ🙏</b>"
         )
 
     # Exceeded
@@ -150,7 +265,7 @@ async def track_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
         mute_enabled, mute_time = cur.fetchone()
 
         await update.message.reply_html(
-            f"🚫 {user.mention_html()} আপনি আজকের limit শেষ করেছেন!"
+            f"🚫 প্রিয় {user.mention_html()}\nআপনি আজকের সর্বোচ্চ Movie Request limit এ পৌঁছে গেছেন। আবার আগামীকাল Request করবেন!\n\n ধন্যবাদ"
         )
 
         if mute_enabled:
@@ -163,25 +278,120 @@ async def track_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
 # ---------------- COMMANDS ----------------
+async def bot_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.my_chat_member:
+        chat = update.my_chat_member.chat
+        await send_log(
+            context,
+            f"➕ Bot added to group\nName: {chat.title}\nID: {chat.id}"
+        )
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    group_id = update.effective_chat.id
-    user_id = int(context.args[0]) if context.args else update.effective_user.id
-
-    cur.execute("""
-    SELECT message_count FROM users
-    WHERE user_id=? AND group_id=?
-    """, (user_id, group_id))
-    row = cur.fetchone()
-    if not row:
-        await update.message.reply_text("No data found.")
+    if not is_up_admin(update.effective_user.id):
         return
 
-    limit = get_limit(user_id, group_id)
+    group_id = update.effective_chat.id
+    message = update.message
 
-    await update.message.reply_text(
-        f"User: {user_id}\nTotal: {row[0]}/{limit}"
+    user_id = None
+    username = None
+
+    # ---- Case 1: Reply ----
+    if message.reply_to_message:
+        target = message.reply_to_message.from_user
+        user_id = target.id
+        username = target.full_name
+
+    # ---- Case 2: Mention entity (@username or text mention) ----
+    elif message.entities:
+        for entity in message.entities:
+            if entity.type == "text_mention":
+                user_id = entity.user.id
+                username = entity.user.full_name
+                break
+            elif entity.type == "mention":
+                mention_text = message.text[entity.offset: entity.offset + entity.length]
+                username_only = mention_text.replace("@", "")
+
+                # Try to find from database (if user already interacted)
+                cur.execute("""
+                SELECT user_id FROM users
+                WHERE group_id=?
+                """, (group_id,))
+                all_users = cur.fetchall()
+
+                for (uid,) in all_users:
+                    try:
+                        chat_member = await context.bot.get_chat_member(group_id, uid)
+                        if chat_member.user.username == username_only:
+                            user_id = uid
+                            username = chat_member.user.full_name
+                            break
+                    except:
+                        continue
+                if user_id:
+                    break
+
+    # ---- Case 3: ID from argument ----
+    if not user_id and context.args:
+        try:
+            user_id = int(context.args[0])
+            username = str(user_id)
+        except:
+            await message.reply_text("Invalid user reference.")
+            return
+
+    # ---- Case 4: Self ----
+    if not user_id:
+        target = update.effective_user
+        user_id = target.id
+        username = target.full_name
+
+    # ---- Fetch Data ----
+    cur.execute("""
+    SELECT message_count, extended_limit, is_special
+    FROM users
+    WHERE user_id=? AND group_id=?
+    """, (user_id, group_id))
+
+    row = cur.fetchone()
+
+    if not row:
+        await message.reply_text("No data found for this user.")
+        return
+
+    message_count, extended_limit, is_special = row
+
+    limit = get_limit(user_id, group_id)
+    remaining = max(limit - message_count, 0)
+
+    special_status = "Yes" if is_special else "No"
+    ext_text = extended_limit if extended_limit else "No"
+
+    await message.reply_text(
+        f"📊 User Stats\n\n"
+        f"Name: {username}\n"
+        f"User ID: {user_id}\n\n"
+        f"Used: {message_count}/{limit}\n"
+        f"Remaining: {remaining}\n\n"
+        f"Extended Limit: {ext_text}\n"
+        f"Special Member: {special_status}"
     )
+
+async def up_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        return
+
+    if not context.args:
+        await update.message.reply_text("Usage: /up_admin [user_id]")
+        return
+
+    user_id = int(context.args[0])
+
+    cur.execute("INSERT OR IGNORE INTO stats_admins(user_id) VALUES(?)", (user_id,))
+    conn.commit()
+
+    await update.message.reply_text("User promoted to Stats Admin.")
 
 async def sp_mem(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
@@ -290,13 +500,27 @@ async def cmd_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/cmd"
     )
 
+async def post_init(application):
+    await application.bot.send_message(
+        chat_id=LOG_CHAT_ID,
+        text="🚀 Bot restarted successfully."
+    )
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await send_log(
+        context,
+        f"👤 User started bot\nName: {update.effective_user.full_name}\nID: {update.effective_user.id}"
+    )
+    await update.message.reply_text("Bot active.")
+
 # ---------------- MAIN ----------------
 
 def main():
-    application = Application.builder().token(BOT_TOKEN).build()
+    application = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, track_messages))
     application.add_handler(CommandHandler("stats", stats))
+    application.add_handler(CommandHandler("ext_up", ext_up))
     application.add_handler(CommandHandler("Sp_mem", sp_mem))
     application.add_handler(CommandHandler("Ext_lim", ext_lim))
     application.add_handler(CommandHandler("Mute", mute_toggle))
@@ -306,6 +530,9 @@ def main():
     application.add_handler(CommandHandler("grp_setting", grp_setting))
     application.add_handler(CommandHandler("Add_grp", add_group))
     application.add_handler(CommandHandler("cmd", cmd_list))
+    application.add_handler(MessageHandler(filters.StatusUpdate.MY_CHAT_MEMBER, bot_added))
+    application.add_handler(CommandHandler("start", start))
+
 
     application.run_webhook(
         listen="0.0.0.0",
