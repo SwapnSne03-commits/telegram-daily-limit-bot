@@ -281,10 +281,43 @@ async def track_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def bot_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.my_chat_member:
         chat = update.my_chat_member.chat
+
+        # Log
         await send_log(
             context,
             f"➕ Bot added to group\nName: {chat.title}\nID: {chat.id}"
         )
+
+        # Group message
+        await context.bot.send_message(
+            chat_id=chat.id,
+            text="⚠️ This group is not authorized.\nOwner must use /Add_grp to activate bot."
+        )
+
+async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        return
+
+    if not context.args:
+        await update.message.reply_text("Usage: /Add_grp [group_id]")
+        return
+
+    try:
+        group_id = int(context.args[0])
+    except:
+        await update.message.reply_text("Invalid group ID.")
+        return
+
+    cur.execute("INSERT OR IGNORE INTO groups(group_id) VALUES(?)", (group_id,))
+    conn.commit()
+
+    await update.message.reply_text("Group authorized successfully.")
+
+    # ---- LOG ----
+    await send_log(
+        context,
+        f"✅ New Group Authorized\nGroup ID: {group_id}\nAuthorized By: {update.effective_user.full_name}\nUser ID: {update.effective_user.id}"
+    )
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_up_admin(update.effective_user.id):
@@ -532,7 +565,7 @@ def main():
     application.add_handler(CommandHandler("cmd", cmd_list))
     application.add_handler(MessageHandler(filters.StatusUpdate.MY_CHAT_MEMBER, bot_added))
     application.add_handler(CommandHandler("start", start))
-
+    application.add_handler(CommandHandler("Add_grp", add_group))
 
     application.run_webhook(
         listen="0.0.0.0",
