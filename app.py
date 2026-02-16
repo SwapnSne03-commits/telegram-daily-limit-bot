@@ -2,7 +2,6 @@ import os
 import sqlite3
 from datetime import datetime, timedelta
 
-from flask import Flask, request
 from telegram import Update, ChatPermissions
 from telegram.ext import (
     Application,
@@ -12,11 +11,12 @@ from telegram.ext import (
     filters,
 )
 
+# ---------------- ENV ----------------
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OWNER_ID = int(os.getenv("OWNER_ID"))
+PORT = int(os.environ.get("PORT", 10000))
 RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")
-
-app = Flask(__name__)
 
 # ---------------- DATABASE ----------------
 
@@ -39,7 +39,6 @@ CREATE TABLE IF NOT EXISTS users (
     message_count INTEGER DEFAULT 0,
     extended_limit INTEGER DEFAULT NULL,
     is_special INTEGER DEFAULT 0,
-    muted_until TEXT DEFAULT NULL,
     last_reset TEXT,
     PRIMARY KEY (user_id, group_id)
 )
@@ -101,6 +100,7 @@ async def track_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
 
+    # Group authorized?
     cur.execute("SELECT group_id FROM groups WHERE group_id=?", (group_id,))
     if not cur.fetchone():
         return
@@ -137,7 +137,12 @@ async def track_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
         SELECT mute_enabled, mute_time FROM groups
         WHERE group_id=?
         """, (group_id,))
-        mute_enabled, mute_time = cur.fetchone()
+        row = cur.fetchone()
+
+        if not row:
+            return
+
+        mute_enabled, mute_time = row
 
         await update.message.reply_html(
             f"⚠️ {user.mention_html()} আপনি মেসেজ লিমিট অতিক্রম করেছেন!"
@@ -182,48 +187,40 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
         return
+
     group_id = int(context.args[0])
     cur.execute("INSERT OR IGNORE INTO groups(group_id) VALUES(?)", (group_id,))
     conn.commit()
+
     await update.message.reply_text("Group authorized.")
 
 async def cmd_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("""
-Available Commands:
+    await update.message.reply_text(
+        "Available Commands:\n\n"
+        "/stats [id]\n"
+        "/Sp_mem [id]\n"
+        "/Ext_lim [id] [limit]\n"
+        "/Mute on/off\n"
+        "/Set_mute 5m/5h/5d\n"
+        "/Add_grp [group_id]\n"
+        "/cmd"
+    )
 
-/stats [id]
-/Sp_mem [id]
-/Ext_lim [id] [limit]
-/Mute on/off
-/Set_mute 5m/5h/5d
-/Add_grp [group_id]
-/cmd
-""")
+# ---------------- MAIN ----------------
 
-# ---------------- APP INIT ----------------
+def main():
+    application = Application.builder().token(BOT_TOKEN).build()
 
-application = Application.builder().token(BOT_TOKEN).build()
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, track_messages))
+    application.add_handler(CommandHandler("stats", stats))
+    application.add_handler(CommandHandler("Add_grp", add_group))
+    application.add_handler(CommandHandler("cmd", cmd_list))
 
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, track_messages))
-application.add_handler(CommandHandler("stats", stats))
-application.add_handler(CommandHandler("Add_grp", add_group))
-application.add_handler(CommandHandler("cmd", cmd_list))
-
-@app.route(f"/{BOT_TOKEN}", methods=["POST"])
-def webhook():
-    update = Update.de_json(request.get_json(force=True), application.bot)
-    application.update_queue.put_nowait(update)
-    return "ok"
-
-@app.route("/")
-def home():
-    return "Bot is running"
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        webhook_url=f"{RENDER_EXTERNAL_URL}/{BOT_TOKEN}",
+    )
 
 if __name__ == "__main__":
-    application.initialize()
-    application.start()
-
-    webhook_url = f"{RENDER_EXTERNAL_URL}/{BOT_TOKEN}"
-    application.bot.set_webhook(webhook_url)
-
-    app.run(host="0.0.0.0", port=10000)
+    main()
