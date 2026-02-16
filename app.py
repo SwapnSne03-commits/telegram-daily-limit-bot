@@ -219,6 +219,7 @@ def main():
     application.run_webhook(
         listen="0.0.0.0",
         port=PORT,
+        url_path=BOT_TOKEN,   # এটা খুব গুরুত্বপূর্ণ
         webhook_url=f"{RENDER_EXTERNAL_URL}/{BOT_TOKEN}",
     )
 
