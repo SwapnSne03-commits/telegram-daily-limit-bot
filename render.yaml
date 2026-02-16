@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: telegram-limit-bot
+    env: python
+    buildCommand: ""
+    startCommand: python app.py
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: OWNER_ID
+        sync: false
