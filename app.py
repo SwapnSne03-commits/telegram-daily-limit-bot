@@ -1,7 +1,7 @@
 import os
 import sqlite3
 from datetime import datetime, timedelta
-
+from telegram.ext import ChatMemberHandler
 from telegram import Update, ChatPermissions
 from telegram.ext import (
     Application,
@@ -578,7 +578,7 @@ def main():
     application.add_handler(CommandHandler("grp_setting", grp_setting))
     application.add_handler(CommandHandler("Add_grp", add_group))
     application.add_handler(CommandHandler("cmd", cmd_list))
-    application.add_handler(MessageHandler(filters.StatusUpdate.MY_CHAT_MEMBER, bot_added))
+    application.add_handler(ChatMemberHandler(bot_added, ChatMemberHandler.MY_CHAT_MEMBER))
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("up_admin", up_admin))
 
