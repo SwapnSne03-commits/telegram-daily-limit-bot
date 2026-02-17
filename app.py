@@ -1,4 +1,19 @@
 import os
+from datetime import datetime, timedelta
+
+from telegram import Update, ChatPermissions
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters,
+    ConversationHandler,
+    CallbackQueryHandler,
+    ChatMemberHandler
+)
+
+# Force Sub System
 from force_sub import (
     sub_force,
     choose_type,
@@ -11,8 +26,8 @@ from force_sub import (
     WAITING_CHANNEL_ID
 )
 
+# Database Collections
 from database import (
-    db,
     groups_col,
     users_col,
     admins_col,
@@ -20,18 +35,6 @@ from database import (
     force_channels_col,
     force_verified_col
 )
-from pymongo import MongoClient
-from datetime import datetime, timedelta
-from telegram.ext import ChatMemberHandler
-from telegram import Update, ChatPermissions
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters,
-)
-
 # ---------------- ENV ----------------
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
