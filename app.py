@@ -10,6 +10,16 @@ from force_sub import (
     CHOOSING_TYPE,
     WAITING_CHANNEL_ID
 )
+
+from database import (
+    db,
+    groups_col,
+    users_col,
+    admins_col,
+    force_config_col,
+    force_channels_col,
+    force_verified_col
+)
 from pymongo import MongoClient
 from datetime import datetime, timedelta
 from telegram.ext import ChatMemberHandler
@@ -32,16 +42,6 @@ LOG_CHAT_ID = int(os.getenv("LOG_CHAT_ID"))
 
 # ---------------- DATABASE ----------------
 # ---------------- DATABASE (MongoDB) ----------------
-
-MONGO_URI = os.getenv("MONGO_URI")
-
-client = MongoClient(MONGO_URI)
-
-db = client["telegram_limit_bot"]
-
-groups_col = db["groups"]
-users_col = db["users"]
-admins_col = db["stats_admins"]
 
 
 # ---------------- LOGGING ----------------
