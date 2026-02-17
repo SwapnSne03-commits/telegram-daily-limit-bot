@@ -21,9 +21,9 @@ from database import (
     force_verified_col
 )
 
-from config import OWNER_ID   # যদি OWNER_ID আলাদা config.py তে থাকে
-# যদি OWNER_ID app.py তে থাকে তাহলে:
-# from app import OWNER_ID
+import os
+
+OWNER_ID = int(os.getenv("OWNER_ID"))
 
 # ================= Conversation States =================
 CHOOSING_TYPE, WAITING_CHANNEL_ID = range(2)
