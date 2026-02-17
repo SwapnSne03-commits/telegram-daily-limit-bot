@@ -5,29 +5,27 @@ from telegram import (
     ChatPermissions,
     Update
 )
+from telegram.ext import (
+    ContextTypes,
+    ConversationHandler,
+    CallbackQueryHandler,
+    MessageHandler,
+    filters
+)
 
+# ===== Import Database & Config =====
 from database import (
     users_col,
     force_config_col,
     force_channels_col,
     force_verified_col
 )
-from telegram.ext import (
-    ContextTypes,
-    ConversationHandler,
-    CallbackQueryHandler,
-    CommandHandler,
-    MessageHandler,
-    filters
-)
 
-# ===== Mongo collections (main.py থেকে import হবে) =====
-# db, OWNER_ID, users_col
+from config import OWNER_ID   # যদি OWNER_ID আলাদা config.py তে থাকে
+# যদি OWNER_ID app.py তে থাকে তাহলে:
+# from app import OWNER_ID
 
-force_config_col = db["force_config"]       # per group enable/disable
-force_channels_col = db["force_channels"]   # per group channels
-force_verified_col = db["force_verified"]   # verified users per group
-
+# ================= Conversation States =================
 CHOOSING_TYPE, WAITING_CHANNEL_ID = range(2)
 
 
@@ -36,6 +34,10 @@ CHOOSING_TYPE, WAITING_CHANNEL_ID = range(2)
 async def sub_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
         return
+
+    if update.effective_chat.type == "private":
+        await update.message.reply_text("Use this command inside a group.")
+        return ConversationHandler.END
 
     keyboard = InlineKeyboardMarkup([
         [
@@ -60,10 +62,12 @@ async def choose_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     context.user_data["sub_type"] = query.data
+
     await query.message.reply_text(
         "Send Channel ID.\n\n"
         "Tip: Bot must be admin in that channel."
     )
+
     return WAITING_CHANNEL_ID
 
 
@@ -101,7 +105,7 @@ async def save_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
-# ================= REMOVE =================
+# ================= REMOVE & CONTROL =================
 
 async def remove_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
@@ -111,7 +115,12 @@ async def remove_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Usage: /remove_chnl [channel_id]")
         return
 
-    channel_id = int(context.args[0])
+    try:
+        channel_id = int(context.args[0])
+    except:
+        await update.message.reply_text("Invalid Channel ID.")
+        return
+
     group_id = update.effective_chat.id
 
     force_channels_col.delete_one({
@@ -162,12 +171,12 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user.id == OWNER_ID:
         return
 
-    # group enabled?
+    # Force enabled?
     config = force_config_col.find_one({"group_id": group_id})
     if not config or not config.get("enabled"):
         return
 
-    # special member bypass
+    # Special member bypass
     special = users_col.find_one({
         "user_id": user.id,
         "group_id": group_id,
@@ -176,7 +185,7 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if special:
         return
 
-    # already verified?
+    # Already verified?
     if force_verified_col.find_one({
         "user_id": user.id,
         "group_id": group_id
@@ -209,14 +218,15 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # delete message
+    # Delete message
     try:
         await update.message.delete()
     except:
         pass
 
-    # mute 30 sec
+    # Mute 30 seconds
     until = datetime.utcnow() + timedelta(seconds=30)
+
     await context.bot.restrict_chat_member(
         group_id,
         user.id,
@@ -224,7 +234,7 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
         until_date=until
     )
 
-    # buttons
+    # Create buttons
     buttons = []
 
     for ch in not_joined:
@@ -249,4 +259,4 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text="⚠️ You must join required channels before sending messages.\n\n"
              "After joining, send message again.",
         reply_markup=keyboard
-  )
+    )
