@@ -154,6 +154,7 @@ async def clear_req(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     group_id = update.effective_chat.id
     force_verified_col.delete_many({"group_id": group_id})
+    force_pending_col.delete_many({"group_id": group_id})
 
     await update.message.reply_text(
         "Verification cache cleared.\n"
