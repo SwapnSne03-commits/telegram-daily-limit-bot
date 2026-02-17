@@ -1,4 +1,15 @@
 import os
+from force_sub import (
+    sub_force,
+    choose_type,
+    save_channel,
+    remove_channel,
+    force_remove,
+    clear_req,
+    check_force,
+    CHOOSING_TYPE,
+    WAITING_CHANNEL_ID
+)
 from pymongo import MongoClient
 from datetime import datetime, timedelta
 from telegram.ext import ChatMemberHandler
@@ -712,6 +723,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     application = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
+    conv = ConversationHandler(
+        entry_points=[CommandHandler("Sub_force", sub_force)],
+        states={
+            CHOOSING_TYPE: [CallbackQueryHandler(choose_type)],
+            WAITING_CHANNEL_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_channel)],
+        },
+        fallbacks=[]
+    )
+
+    application.add_handler(conv)
+
+    application.add_handler(CommandHandler("remove_chnl", remove_channel))
+    application.add_handler(CommandHandler("force_remove", force_remove))
+    application.add_handler(CommandHandler("clear_req", clear_req))
+
+    # MUST be before track_messages
+    application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, check_force), group=0)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, track_messages))
     application.add_handler(CommandHandler("stats", stats))
     application.add_handler(CommandHandler("ext_up", ext_up))
