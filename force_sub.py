@@ -211,13 +211,30 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
             not_joined.append(ch)
 
     if not not_joined:
+        # Mark verified
         force_verified_col.update_one(
             {"user_id": user.id, "group_id": group_id},
             {"$set": {"verified": True}},
             upsert=True
         )
-        return
 
+        # Send greeting message
+        msg = await context.bot.send_message(
+            chat_id=group_id,
+            text=(
+                f"🎉 Hey {user.mention_html()}\n\n"
+                "<b>আমাদের চ্যানেলগুলি জয়েন করার জন্য আপনাকে অসংখ্য ধন্যবাদ 🙏.\n"
+                "এবার আপনি Request করতে পারেন..</b>"
+            ),
+            parse_mode="HTML"
+        )
+
+        # Auto delete after 50 sec
+        context.job_queue.run_once(
+            lambda ctx: ctx.bot.delete_message(chat_id=group_id, message_id=msg.message_id),
+            when=50
+        )
+        return
     # Delete message
     try:
         await update.message.delete()
@@ -249,14 +266,25 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
         buttons.append([
-            InlineKeyboardButton("Join Required Channel", url=invite.invite_link)
+            InlineKeyboardButton("ᴊᴏɪɴ ᴏᴜʀ ᴄʜᴀɴɴᴇʟ", url=invite.invite_link)
         ])
 
     keyboard = InlineKeyboardMarkup(buttons)
 
-    await context.bot.send_message(
+    warn_msg = await context.bot.send_message(
         chat_id=group_id,
-        text="⚠️ You must join required channels before sending messages.\n\n"
-             "After joining, send message again.",
-        reply_markup=keyboard
+        text=(
+            f"⚠️ {user.mention_html()}\n\n"
+            "<b>Request করার আগে আপনাকে নিচে দেওয়া চ্যানেলগুলি অবশ্যই Join করতে হবে।\n\n"
+            "জয়েন করার পর আবার Request করুন।\n"
+            "আমরা আপনার Request এর জন্য অপেক্ষায় আছি..!!</b>"
+        ),
+        reply_markup=keyboard,
+        parse_mode="HTML"
+    )
+
+    # Auto delete after 50 sec
+    context.job_queue.run_once(
+        lambda ctx: ctx.bot.delete_message(chat_id=group_id, message_id=warn_msg.message_id),
+        when=50
     )
