@@ -199,7 +199,23 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not channels:
         return
+    # ----- Pending Request Detect -----
+    pending_exists = False
 
+    for ch in channels:
+        pending = force_pending_col.find_one({
+            "user_id": user.id,
+            "group_id": group_id,
+            "channel_id": ch["channel_id"],
+            "requested": True
+        })
+
+        if pending:
+            pending_exists = True
+            break
+
+    if pending_exists:
+        return
     not_joined = []
 
     for ch in channels:
@@ -259,6 +275,21 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
             invite = await context.bot.create_chat_invite_link(
                 ch["channel_id"],
                 creates_join_request=True
+            )
+            # ----- Mark Pending Request -----
+            force_pending_col.update_one(
+                {
+                    "user_id": user.id,
+                    "group_id": group_id,
+                    "channel_id": ch["channel_id"]
+                },
+                {
+                    "$set": {
+                        "requested": True,
+                        "requested_at": datetime.utcnow()
+                    }
+                },
+                upsert=True
             )
         else:
             invite = await context.bot.create_chat_invite_link(
