@@ -743,14 +743,16 @@ def main():
     application.add_handler(CommandHandler("clear_req", clear_req))
 
     # -------- IMPORTANT FIX --------
-    # ❌ group=0 REMOVE
+    # -------- Force Sub First (priority 0) --------
     application.add_handler(
-        MessageHandler(filters.ALL & ~filters.COMMAND, check_force)
+        MessageHandler(filters.TEXT & ~filters.COMMAND, check_force),
+        group=0
     )
 
-    # track_messages MUST always run
+    # -------- Limit System After (priority 1) --------
     application.add_handler(
-        MessageHandler(filters.ALL & ~filters.COMMAND, track_messages)
+        MessageHandler(filters.TEXT & ~filters.COMMAND, track_messages),
+        group=1
     )
 
     # -------- Commands --------
