@@ -23,6 +23,7 @@ from database import (
 )
 
 import os
+from datetime import datetime, timedelta, timezone
 
 OWNER_ID = int(os.getenv("OWNER_ID"))
 
@@ -159,7 +160,18 @@ async def clear_req(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Users will be checked again."
     )
 
-
+async def unmute_user(context: ContextTypes.DEFAULT_TYPE):
+    job = context.job
+    await context.bot.restrict_chat_member(
+        chat_id=job.data["group_id"],
+        user_id=job.data["user_id"],
+        permissions=ChatPermissions(
+            can_send_messages=True,
+            can_send_media_messages=True,
+            can_send_other_messages=True,
+            can_add_web_page_previews=True
+        )
+    )
 # ================= MAIN CHECK =================
 
 async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -231,7 +243,7 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Mark verified
         force_verified_col.update_one(
             {"user_id": user.id, "group_id": group_id},
-            {"$set": {"verified": True}},
+            {"$set": {"verified": True, "verified_at": datetime.utcnow()}},
             upsert=True
         )
 
@@ -258,16 +270,23 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         pass
 
-    # Mute 30 seconds
-    until = datetime.utcnow() + timedelta(seconds=30)
+    # Mute 30sec 
+    until = datetime.now(timezone.utc) + timedelta(seconds=30)
 
     await context.bot.restrict_chat_member(
-        group_id,
-        user.id,
-        permissions=ChatPermissions(can_send_messages=False),
+        chat_id=group_id,
+        user_id=user.id,
+        permissions=ChatPermissions(
+            can_send_messages=False
+        ),
         until_date=until
     )
 
+    context.job_queue.run_once(
+        unmute_user,
+        30,
+        data={"group_id": group_id, "user_id": user.id}
+        )
     # Create buttons
     buttons = []
 
