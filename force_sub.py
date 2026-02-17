@@ -5,6 +5,13 @@ from telegram import (
     ChatPermissions,
     Update
 )
+
+from database import (
+    users_col,
+    force_config_col,
+    force_channels_col,
+    force_verified_col
+)
 from telegram.ext import (
     ContextTypes,
     ConversationHandler,
