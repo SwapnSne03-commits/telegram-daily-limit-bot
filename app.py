@@ -726,6 +726,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     application = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
+    # -------- Force Sub Conversation --------
     conv = ConversationHandler(
         entry_points=[CommandHandler("Sub_force", sub_force)],
         states={
@@ -741,9 +742,18 @@ def main():
     application.add_handler(CommandHandler("force_remove", force_remove))
     application.add_handler(CommandHandler("clear_req", clear_req))
 
-    # MUST be before track_messages
-    application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, check_force), group=0)
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, track_messages))
+    # -------- IMPORTANT FIX --------
+    # ❌ group=0 REMOVE
+    application.add_handler(
+        MessageHandler(filters.ALL & ~filters.COMMAND, check_force)
+    )
+
+    # track_messages MUST always run
+    application.add_handler(
+        MessageHandler(filters.ALL & ~filters.COMMAND, track_messages)
+    )
+
+    # -------- Commands --------
     application.add_handler(CommandHandler("stats", stats))
     application.add_handler(CommandHandler("ext_up", ext_up))
     application.add_handler(CommandHandler("Sp_mem", sp_mem))
@@ -755,9 +765,12 @@ def main():
     application.add_handler(CommandHandler("grp_setting", grp_setting))
     application.add_handler(CommandHandler("Add_grp", add_group))
     application.add_handler(CommandHandler("cmd", cmd_list))
-    application.add_handler(ChatMemberHandler(bot_added, ChatMemberHandler.MY_CHAT_MEMBER))
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("up_admin", up_admin))
+
+    application.add_handler(
+        ChatMemberHandler(bot_added, ChatMemberHandler.MY_CHAT_MEMBER)
+    )
 
     application.run_webhook(
         listen="0.0.0.0",
