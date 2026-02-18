@@ -213,33 +213,36 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not channels:
         return
     # ----- Pending Request Detect -----
-    pending_exists = False
-
-    for ch in channels:
-        pending = force_pending_col.find_one({
-            "user_id": user.id,
-            "group_id": group_id,
-            "channel_id": ch["channel_id"],
-            "requested": True
-        })
-
-        if pending:
-            pending_exists = True
-            break
-
-    if pending_exists:
-        return
+    
     not_joined = []
+    pending_channels = []
 
     for ch in channels:
         try:
             member = await context.bot.get_chat_member(ch["channel_id"], user.id)
+
             if member.status in ["left", "kicked"]:
-                not_joined.append(ch)
+                if ch["type"] == "req":
+                    pending = force_pending_col.find_one({
+                        "user_id": user.id,
+                        "group_id": group_id,
+                        "channel_id": ch["channel_id"]
+                    })
+
+                    if pending:
+                        pending_channels.append(ch)
+                    else:
+                        not_joined.append(ch)
+                else:
+                    not_joined.append(ch)
+
         except:
             not_joined.append(ch)
 
-    if not not_joined:
+    # ✅ Only pending → allow message
+    if pending_channels and not not_joined:
+        return
+    if not not_joined and not pending_channels:
         # Mark verified
         force_verified_col.update_one(
             {"user_id": user.id, "group_id": group_id},
@@ -247,6 +250,10 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
             upsert=True
         )
 
+        force_pending_col.delete_many({
+            "user_id": user.id,
+            "group_id": group_id
+        })
         # Send greeting message
         msg = await context.bot.send_message(
             chat_id=group_id,
