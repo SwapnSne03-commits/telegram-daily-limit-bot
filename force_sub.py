@@ -252,9 +252,9 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg = await context.bot.send_message(
             chat_id=group_id,
             text=(
-                f"🎉 Hey {user.mention_html()}\n\n"
+                f"🎉 <b> Hey {user.mention_html()}</b>\n\n"
                 "<b>আমাদের চ্যানেলগুলি জয়েন করার জন্য আপনাকে অসংখ্য ধন্যবাদ 🙏.\n"
-                "এবার আপনি Request করতে পারেন..</b>"
+                "এভাবেই আমাদের পাশে থাকুন ও সুস্থ থাকুন ✨</b>"
             ),
             parse_mode="HTML"
         )
