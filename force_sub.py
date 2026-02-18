@@ -161,16 +161,15 @@ async def clear_req(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Users will be checked again."
     )
 
+
 async def unmute_user(context: ContextTypes.DEFAULT_TYPE):
     job = context.job
+
     await context.bot.restrict_chat_member(
         chat_id=job.data["group_id"],
         user_id=job.data["user_id"],
         permissions=ChatPermissions(
-            can_send_messages=True,
-            can_send_media_messages=True,
-            can_send_other_messages=True,
-            can_add_web_page_previews=True
+            can_send_messages=True
         )
     )
 # ================= MAIN CHECK =================
@@ -277,14 +276,9 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.restrict_chat_member(
         chat_id=group_id,
         user_id=user.id,
-        permissions=ChatPermissions(
-            can_send_messages=False,
-            can_send_media_messages=False,
-            can_send_other_messages=False,
-            can_add_web_page_previews=False
-        ),
+        permissions=ChatPermissions(can_send_messages=False),
         until_date=until
-        )
+    )
 
     context.job_queue.run_once(
         unmute_user,
