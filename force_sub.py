@@ -278,10 +278,13 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id=group_id,
         user_id=user.id,
         permissions=ChatPermissions(
-            can_send_messages=False
+            can_send_messages=False,
+            can_send_media_messages=False,
+            can_send_other_messages=False,
+            can_add_web_page_previews=False
         ),
         until_date=until
-    )
+        )
 
     context.job_queue.run_once(
         unmute_user,
