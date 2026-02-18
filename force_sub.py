@@ -251,29 +251,30 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 user.id
             )
 
-            # If already joined → OK
-            if member.status in ["member", "administrator", "creator"]:
+            status = member.status
+
+            # ✅ Only these mean user truly joined
+            if status in ["member", "administrator", "creator"]:
                 continue
 
-            # If NOT joined
+            # ❌ Everything else means NOT joined
             if ch["type"] == "req":
+
                 pending = force_pending_col.find_one({
                     "user_id": user.id,
                     "group_id": group_id,
                     "channel_id": ch["channel_id"]
                 })
 
-                # Pending request exists → allow
+                # If real pending exists → allow
                 if pending:
                     continue
-                else:
-                    not_joined.append(ch)
 
-            else:
-                # Direct channel → must join
-                not_joined.append(ch)
+            # If direct channel OR no valid pending → must join
+            not_joined.append(ch)
 
         except:
+            # If API fails, treat as not joined (safe side)
             not_joined.append(ch)
     # ------------------------------------------------
 
