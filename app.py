@@ -23,6 +23,8 @@ from force_sub import (
     clear_req,
     check_force,
     CHOOSING_TYPE,
+    handle_join_request,
+    handle_member_update,
     WAITING_CHANNEL_ID
 )
 
@@ -741,7 +743,9 @@ def main():
     application.add_handler(CommandHandler("remove_chnl", remove_channel))
     application.add_handler(CommandHandler("force_remove", force_remove))
     application.add_handler(CommandHandler("clear_req", clear_req))
-
+    application.add_handler(ChatJoinRequestHandler(handle_join_request))
+    application.add_handler(ChatMemberHandler(handle_member_update, ChatMemberHandler.CHAT_MEMBER))
+    
     # -------- IMPORTANT FIX --------
     # -------- Force Sub First (priority 0) --------
     application.add_handler(
