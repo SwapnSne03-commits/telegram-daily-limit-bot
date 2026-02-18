@@ -259,7 +259,7 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
             # If user already joined → OK
-            if member.status not in ["left", "kicked"]:
+            if member.status in ["member", "administrator", "creator"]:
                 continue
 
             # If NOT joined
