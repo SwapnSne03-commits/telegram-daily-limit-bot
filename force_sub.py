@@ -246,38 +246,47 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not channels:
         return
-    # ----- Pending Request Detect -----
-    
+
+
+    # ---------------- FIXED CHANNEL CHECK BLOCK ----------------
     not_joined = []
-    pending_channels = []
 
     for ch in channels:
         try:
-            member = await context.bot.get_chat_member(ch["channel_id"], user.id)
+            member = await context.bot.get_chat_member(
+                ch["channel_id"],
+                user.id
+            )
 
-            if member.status in ["left", "kicked"]:
-                if ch["type"] == "req":
-                    pending = force_pending_col.find_one({
-                        "user_id": user.id,
-                        "group_id": group_id,
-                        "channel_id": ch["channel_id"]
-                    })
+            # If user already joined → OK
+            if member.status not in ["left", "kicked"]:
+                continue
 
-                    if pending:
-                        pending_channels.append(ch)
-                    else:
-                        not_joined.append(ch)
+            # If NOT joined
+            if ch["type"] == "req":
+                pending = force_pending_col.find_one({
+                    "user_id": user.id,
+                    "group_id": group_id,
+                    "channel_id": ch["channel_id"]
+                })
+
+                # If pending request exists → allow
+                if pending:
+                    continue
                 else:
                     not_joined.append(ch)
 
+            else:
+                # Direct channel → must join
+                not_joined.append(ch)
+
         except:
             not_joined.append(ch)
+    # -----------------------------------------------------------
 
-    # ✅ Only pending → allow message
-    if pending_channels and not not_joined:
-        return
-    if not not_joined and not pending_channels:
-        # Mark verified
+
+    # If everything is clear → mark verified
+    if not not_joined:
         force_verified_col.update_one(
             {"user_id": user.id, "group_id": group_id},
             {"$set": {"verified": True, "verified_at": datetime.utcnow()}},
@@ -288,7 +297,7 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "user_id": user.id,
             "group_id": group_id
         })
-        # Send greeting message
+
         msg = await context.bot.send_message(
             chat_id=group_id,
             text=(
@@ -299,20 +308,25 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
 
-        # Auto delete after 50 sec
         context.job_queue.run_once(
-            lambda ctx: ctx.bot.delete_message(chat_id=group_id, message_id=msg.message_id),
+            lambda ctx: ctx.bot.delete_message(
+                chat_id=group_id,
+                message_id=msg.message_id
+            ),
             when=50
         )
         return
-    # Delete message
+
+
+    # Delete user message
     try:
         await update.message.delete()
     except:
         pass
 
-    # Mute 30sec 
+    # Mute 30 sec (your existing system)
     await force_temp_mute(context, group_id, user.id)
+
     # Create buttons
     buttons = []
 
@@ -322,7 +336,7 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ch["channel_id"],
                 creates_join_request=True
             )
-            # ----- Mark Pending Request -----
+
             force_pending_col.update_one(
                 {
                     "user_id": user.id,
@@ -360,8 +374,10 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML"
     )
 
-    # Auto delete after 50 sec
     context.job_queue.run_once(
-        lambda ctx: ctx.bot.delete_message(chat_id=group_id, message_id=warn_msg.message_id),
+        lambda ctx: ctx.bot.delete_message(
+            chat_id=group_id,
+            message_id=warn_msg.message_id
+        ),
         when=50
     )
