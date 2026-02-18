@@ -1,5 +1,6 @@
 import os
 from datetime import datetime, timedelta
+from telegram.ext import ChatJoinRequestHandler
 
 from telegram import Update, ChatPermissions
 from telegram.ext import (
