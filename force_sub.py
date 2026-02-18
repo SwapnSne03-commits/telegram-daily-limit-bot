@@ -24,6 +24,7 @@ from database import (
 
 import os
 from datetime import datetime, timedelta, timezone
+from telegram import ChatJoinRequest
 
 OWNER_ID = int(os.getenv("OWNER_ID"))
 
@@ -207,6 +208,60 @@ async def force_auto_unmute(context):
     except:
         pass
 
+async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    join_request: ChatJoinRequest = update.chat_join_request
+
+    user_id = join_request.from_user.id
+    channel_id = join_request.chat.id
+
+    # Only track if this channel is used in force sub
+    channel_data = force_channels_col.find_one({
+        "channel_id": channel_id,
+        "type": "req"
+    })
+
+    if not channel_data:
+        return
+
+    # Save pending request
+    force_pending_col.update_one(
+        {
+            "user_id": user_id,
+            "group_id": channel_data["group_id"],
+            "channel_id": channel_id
+        },
+        {
+            "$set": {
+                "requested": True,
+                "requested_at": datetime.utcnow()
+            }
+        },
+        upsert=True
+    )
+
+async def handle_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_member = update.chat_member
+
+    user_id = chat_member.from_user.id
+    channel_id = chat_member.chat.id
+
+    # Only check request-type channels
+    channel_data = force_channels_col.find_one({
+        "channel_id": channel_id,
+        "type": "req"
+    })
+
+    if not channel_data:
+        return
+
+    # If user left / rejected
+    if chat_member.new_chat_member.status in ["left", "kicked"]:
+        force_pending_col.delete_many({
+            "user_id": user_id,
+            "group_id": channel_data["group_id"],
+            "channel_id": channel_id
+        })
+
 # ================= MAIN CHECK =================
 async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type not in ["group", "supergroup"]:
@@ -340,20 +395,6 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 creates_join_request=True
             )
 
-            force_pending_col.update_one(
-                {
-                    "user_id": user.id,
-                    "group_id": group_id,
-                    "channel_id": ch["channel_id"]
-                },
-                {
-                    "$set": {
-                        "requested": True,
-                        "requested_at": datetime.utcnow()
-                    }
-                },
-                upsert=True
-            )
         else:
             invite = await context.bot.create_chat_invite_link(
                 ch["channel_id"]
