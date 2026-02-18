@@ -172,6 +172,40 @@ async def unmute_user(context: ContextTypes.DEFAULT_TYPE):
             can_send_messages=True
         )
     )
+
+async def force_temp_mute(context, group_id, user_id):
+    from datetime import datetime, timedelta, timezone
+
+    until = datetime.now(timezone.utc) + timedelta(seconds=30)
+
+    # Apply restriction
+    await context.bot.restrict_chat_member(
+        chat_id=group_id,
+        user_id=user_id,
+        permissions=ChatPermissions(can_send_messages=False),
+        until_date=until
+    )
+
+    # Always schedule unmute (guard system)
+    context.job_queue.run_once(
+        force_auto_unmute,
+        30,
+        data={"group_id": group_id, "user_id": user_id}
+    )
+
+async def force_auto_unmute(context):
+    job = context.job
+
+    try:
+        await context.bot.restrict_chat_member(
+            chat_id=job.data["group_id"],
+            user_id=job.data["user_id"],
+            permissions=ChatPermissions(
+                can_send_messages=True
+            )
+        )
+    except:
+        pass
 # ================= MAIN CHECK =================
 
 async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -278,20 +312,7 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
 
     # Mute 30sec 
-    until = datetime.now(timezone.utc) + timedelta(seconds=30)
-
-    await context.bot.restrict_chat_member(
-        chat_id=group_id,
-        user_id=user.id,
-        permissions=ChatPermissions(can_send_messages=False),
-        until_date=until
-    )
-
-    context.job_queue.run_once(
-        unmute_user,
-        30,
-        data={"group_id": group_id, "user_id": user.id}
-        )
+    await force_temp_mute(context, group_id, user.id)
     # Create buttons
     buttons = []
 
