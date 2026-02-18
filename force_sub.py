@@ -206,8 +206,8 @@ async def force_auto_unmute(context):
         )
     except:
         pass
-# ================= MAIN CHECK =================
 
+# ================= MAIN CHECK =================
 async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type not in ["group", "supergroup"]:
         return
@@ -232,13 +232,6 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if special:
         return
 
-    # Already verified?
-    if force_verified_col.find_one({
-        "user_id": user.id,
-        "group_id": group_id
-    }):
-        return
-
     channels = list(force_channels_col.find({
         "group_id": group_id,
         "active": True
@@ -248,7 +241,7 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
 
-    # ---------------- FIXED CHANNEL CHECK BLOCK ----------------
+    # ---------------- CHANNEL CHECK ----------------
     not_joined = []
 
     for ch in channels:
@@ -258,7 +251,7 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 user.id
             )
 
-            # If user already joined → OK
+            # If already joined → OK
             if member.status in ["member", "administrator", "creator"]:
                 continue
 
@@ -270,7 +263,7 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "channel_id": ch["channel_id"]
                 })
 
-                # If pending request exists → allow
+                # Pending request exists → allow
                 if pending:
                     continue
                 else:
@@ -282,52 +275,61 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         except:
             not_joined.append(ch)
-    # -----------------------------------------------------------
+    # ------------------------------------------------
 
 
-    # If everything is clear → mark verified
+    # ✅ If user joined all required channels
     if not not_joined:
-        force_verified_col.update_one(
-            {"user_id": user.id, "group_id": group_id},
-            {"$set": {"verified": True, "verified_at": datetime.utcnow()}},
-            upsert=True
-        )
 
-        force_pending_col.delete_many({
+        already_verified = force_verified_col.find_one({
             "user_id": user.id,
             "group_id": group_id
         })
 
-        msg = await context.bot.send_message(
-            chat_id=group_id,
-            text=(
-                f"🎉 <b> Hey {user.mention_html()}</b>\n\n"
-                "<b>আমাদের চ্যানেলগুলি জয়েন করার জন্য আপনাকে অসংখ্য ধন্যবাদ 🙏.\n"
-                "এভাবেই আমাদের পাশে থাকুন ও সুস্থ থাকুন ✨</b>"
-            ),
-            parse_mode="HTML"
-        )
+        # Only send greeting first time
+        if not already_verified:
 
-        context.job_queue.run_once(
-            lambda ctx: ctx.bot.delete_message(
+            force_verified_col.update_one(
+                {"user_id": user.id, "group_id": group_id},
+                {"$set": {"verified": True, "verified_at": datetime.utcnow()}},
+                upsert=True
+            )
+
+            force_pending_col.delete_many({
+                "user_id": user.id,
+                "group_id": group_id
+            })
+
+            msg = await context.bot.send_message(
                 chat_id=group_id,
-                message_id=msg.message_id
-            ),
-            when=50
-        )
+                text=(
+                    f"🎉 <b> Hey {user.mention_html()}</b>\n\n"
+                    "<b>আমাদের চ্যানেলগুলি জয়েন করার জন্য আপনাকে অসংখ্য ধন্যবাদ 🙏.\n"
+                    "এভাবেই আমাদের পাশে থাকুন ও সুস্থ থাকুন ✨</b>"
+                ),
+                parse_mode="HTML"
+            )
+
+            context.job_queue.run_once(
+                lambda ctx: ctx.bot.delete_message(
+                    chat_id=group_id,
+                    message_id=msg.message_id
+                ),
+                when=50
+            )
+
         return
 
 
-    # Delete user message
+    # ❌ User still not joined → always enforce
     try:
         await update.message.delete()
     except:
         pass
 
-    # Mute 30 sec (your existing system)
+    # 30 sec temporary mute (your existing system)
     await force_temp_mute(context, group_id, user.id)
 
-    # Create buttons
     buttons = []
 
     for ch in not_joined:
