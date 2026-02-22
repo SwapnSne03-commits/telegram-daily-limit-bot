@@ -780,6 +780,11 @@ def main():
         ChatMemberHandler(bot_added, ChatMemberHandler.MY_CHAT_MEMBER)
     )
 
+    application.job_queue.run_repeating(
+        force_unmute_guard,
+        interval=30,
+        first=10
+        )
     application.run_webhook(
         listen="0.0.0.0",
         port=PORT,
