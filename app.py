@@ -774,7 +774,7 @@ def main():
     application.add_handler(CommandHandler("cmd", cmd_list))
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("up_admin", up_admin))
-
+    application.add_handler(CommandHandler("force_unmute_all", force_unmute_all))
     application.add_handler(
         ChatMemberHandler(bot_added, ChatMemberHandler.MY_CHAT_MEMBER)
     )
