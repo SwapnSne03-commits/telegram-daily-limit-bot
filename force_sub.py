@@ -179,15 +179,34 @@ async def force_temp_mute(context, group_id, user_id):
 
     until = datetime.now(timezone.utc) + timedelta(seconds=30)
 
-    # Apply restriction
-    await context.bot.restrict_chat_member(
-        chat_id=group_id,
-        user_id=user_id,
-        permissions=ChatPermissions(can_send_messages=False),
-        until_date=until
-    )
+    try:
+        # Apply restriction (Force Sub only)
+        await context.bot.restrict_chat_member(
+            chat_id=group_id,
+            user_id=user_id,
+            permissions=ChatPermissions(can_send_messages=False),
+            until_date=until
+        )
 
-    # Always schedule unmute (guard system)
+        # 🔒 Save in DB (Force-only tracking)
+        force_muted_col.update_one(
+            {
+                "user_id": user_id,
+                "group_id": group_id
+            },
+            {
+                "$set": {
+                    "force_muted": True,
+                    "muted_at": datetime.utcnow()
+                }
+            },
+            upsert=True
+        )
+
+    except:
+        return
+
+    # ⏳ Always schedule unmute (guard system)
     context.job_queue.run_once(
         force_auto_unmute,
         30,
@@ -196,17 +215,79 @@ async def force_temp_mute(context, group_id, user_id):
 
 async def force_auto_unmute(context):
     job = context.job
+    group_id = job.data["group_id"]
+    user_id = job.data["user_id"]
 
     try:
+        # Restore FULL permissions safely
         await context.bot.restrict_chat_member(
-            chat_id=job.data["group_id"],
-            user_id=job.data["user_id"],
+            chat_id=group_id,
+            user_id=user_id,
             permissions=ChatPermissions(
-                can_send_messages=True
+                can_send_messages=True,
+                can_send_audios=True,
+                can_send_documents=True,
+                can_send_photos=True,
+                can_send_videos=True,
+                can_send_video_notes=True,
+                can_send_voice_notes=True,
+                can_send_polls=True,
+                can_send_other_messages=True,
+                can_add_web_page_previews=True
             )
         )
     except:
         pass
+
+    # 🧹 Clean DB record
+    force_muted_col.delete_one({
+        "user_id": user_id,
+        "group_id": group_id
+    })
+
+async def force_unmute_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        return
+
+    group_id = update.effective_chat.id
+
+    muted_users = list(force_muted_col.find({
+        "group_id": group_id,
+        "force_muted": True
+    }))
+
+    count = 0
+
+    for user in muted_users:
+        try:
+            await context.bot.restrict_chat_member(
+                chat_id=group_id,
+                user_id=user["user_id"],
+                permissions=ChatPermissions(
+                    can_send_messages=True,
+                    can_send_audios=True,
+                    can_send_documents=True,
+                    can_send_photos=True,
+                    can_send_videos=True,
+                    can_send_video_notes=True,
+                    can_send_voice_notes=True,
+                    can_send_polls=True,
+                    can_send_other_messages=True,
+                    can_add_web_page_previews=True
+                )
+            )
+            count += 1
+        except:
+            pass
+
+    # 🔥 Important: Delete ALL force mute records for this group
+    force_muted_col.delete_many({
+        "group_id": group_id
+    })
+
+    await update.message.reply_text(
+        f"✅ {count} Force-Sub muted users unmuted & database cleaned."
+    )
 
 async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     join_request: ChatJoinRequest = update.chat_join_request
