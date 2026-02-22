@@ -273,20 +273,20 @@ async def force_unmute_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     can_send_voice_notes=True,
                     can_send_polls=True,
                     can_send_other_messages=True,
-                    can_add_web_page_previews=True
+                    can_add_web_page_previews=True,
+                    can_invite_users=True,   # ✅ Add Member allow
+                    can_pin_messages=True    # optional
                 )
             )
             count += 1
         except:
             pass
 
-    # 🔥 Important: Delete ALL force mute records for this group
-    force_muted_col.delete_many({
-        "group_id": group_id
-    })
+    # 🔥 Clean database
+    force_muted_col.delete_many({"group_id": group_id})
 
     await update.message.reply_text(
-        f"✅ {count} Force-Sub muted users unmuted & database cleaned."
+        f"✅ {count} users fully unmuted with all permissions restored."
     )
 
 async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
