@@ -180,39 +180,34 @@ async def force_temp_mute(context, group_id, user_id):
 
     until = datetime.now(timezone.utc) + timedelta(seconds=30)
 
-    try:
-        # Apply restriction (Force Sub only)
-        await context.bot.restrict_chat_member(
-            chat_id=group_id,
-            user_id=user_id,
-            permissions=ChatPermissions(can_send_messages=False),
-            until_date=until
-        )
+    # Apply restriction
+    await context.bot.restrict_chat_member(
+        chat_id=group_id,
+        user_id=user_id,
+        permissions=ChatPermissions(can_send_messages=False),
+        until_date=until
+    )
 
-        # 🔒 Save in DB (Force-only tracking)
-        force_muted_col.update_one(
-            {
-                "user_id": user_id,
-                "group_id": group_id
-            },
-            {
-                "$set": {
-                    "force_muted": True,
-                    "muted_at": datetime.utcnow()
-                }
-            },
-            upsert=True
-        )
+    # ✅ SAVE IN DB (IMPORTANT)
+    force_muted_col.update_one(
+        {
+            "user_id": user_id,
+            "group_id": group_id
+        },
+        {
+            "$set": {
+                "muted_at": datetime.now(timezone.utc)
+            }
+        },
+        upsert=True
+    )
 
-    except:
-        return
-
-    # ⏳ Always schedule unmute (guard system)
+    # Schedule auto unmute
     context.job_queue.run_once(
         force_auto_unmute,
         30,
         data={"group_id": group_id, "user_id": user_id}
-    )
+    )  
 
 async def force_auto_unmute(context):
     job = context.job
@@ -237,8 +232,8 @@ async def force_auto_unmute(context):
                 can_add_web_page_previews=True
             )
         )
-    except:
-        pass
+    except Exception as e:
+        print(f"Unmute error: {e}")
 
     # 🧹 Clean DB record
     force_muted_col.delete_one({
@@ -253,8 +248,7 @@ async def force_unmute_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
     group_id = update.effective_chat.id
 
     muted_users = list(force_muted_col.find({
-        "group_id": group_id,
-        "force_muted": True
+        "group_id": group_id
     }))
 
     count = 0
