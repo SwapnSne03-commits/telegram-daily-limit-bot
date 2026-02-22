@@ -19,6 +19,7 @@ from database import (
     force_config_col,
     force_channels_col,
     force_verified_col,
+    force_muted_col,
     force_pending_col
 )
 
