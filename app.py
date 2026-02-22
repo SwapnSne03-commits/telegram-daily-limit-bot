@@ -27,6 +27,7 @@ from force_sub import (
     handle_join_request,
     handle_member_update,
     force_unmute_all,
+    force_unmute_guard,
     WAITING_CHANNEL_ID
 )
 
