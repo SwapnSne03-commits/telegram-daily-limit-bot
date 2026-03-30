@@ -51,6 +51,17 @@ LOG_CHAT_ID = int(os.getenv("LOG_CHAT_ID"))
 # ---------------- DATABASE ----------------
 # ---------------- DATABASE (MongoDB) ----------------
 
+async def auto_delete_txt(message, context, time=30):
+    def delete_msg(ctx):
+        try:
+            ctx.bot.delete_message(
+                chat_id=message.chat_id,
+                message_id=message.message_id
+            )
+        except:
+            pass
+
+    context.job_queue.run_once(delete_msg, when=time)
 
 # ---------------- LOGGING ----------------
 
@@ -271,18 +282,20 @@ async def track_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ---- Warning before max ----
     if count == limit:
-        await update.message.reply_html(
+        msg = await update.message.reply_html(
             f"⚠️ <b>প্রিয় {user.mention_html()},\nআপনি কেবলমাত্র আর ১টি মুভি/সিরিজ রিকোয়েস্ট করতে পারবেন!\n\nধন্যবাদ🙏</b>"
         )
+        await auto_delete_txt(msg, context)
 
     # ---- Exceeded ----
     if count > limit:
         mute_enabled = group.get("mute_enabled", 1)
         mute_time = group.get("mute_time", "5m")
 
-        await update.message.reply_html(
+        msg = await update.message.reply_html(
             f"🚫 প্রিয় {user.mention_html()}\nআপনি আজকের সর্বোচ্চ Movie Request limit এ পৌঁছে গেছেন। আবার আগামীকাল Request করবেন!\n\nধন্যবাদ"
         )
+        await auto_delete_txt(msg, context)
 
         if mute_enabled:
             until = now() + parse_time(mute_time)
@@ -298,18 +311,39 @@ async def track_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def bot_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.my_chat_member:
         chat = update.my_chat_member.chat
+        user = update.my_chat_member.from_user
+        username = f"@{user.username}" if user.username else "No username"
 
-        # Log
-        await send_log(
-            context,
-            f"➕ Bot added to group\nName: {chat.title}\nID: {chat.id}"
+        try:
+            # 🔗 Create invite link
+            invite = await context.bot.create_chat_invite_link(chat.id)
+            invite_link = invite.invite_link
+        except Exception as e:
+            invite_link = "Failed to generate link"
+            print("INVITE LINK ERROR:", e)
+
+        # 🧾 Log message
+        log_text = (
+            f"➕ Bot added to group\n\n"
+            f"👤 Added By: {user.full_name} ({username})\n"
+            f"📌 Group Name: {chat.title}\n"
+            f"🆔 Group ID: {chat.id}\n\n"
+            f"👤 Added By: {user.full_name}\n"
+            f"🆔 User ID: {user.id}\n"
+            f"🔗 Link: {invite_link}"
         )
 
-        # Group message
-        await context.bot.send_message(
-            chat_id=chat.id,
-            text="⚠️ This group is not authorized.\nOwner must use /Add_grp to activate bot."
-        )
+        # 📤 Send log
+        await send_log(context, log_text)
+
+        # 📢 Group message
+        try:
+            await context.bot.send_message(
+                chat_id=chat.id,
+                text="⚠️ This group is not authorized.\nOwner must use /Add_grp to activate bot."
+            )
+        except Exception as e:
+            print("GROUP MSG ERROR:", e)
 
 async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
@@ -783,7 +817,7 @@ def main():
 
     application.job_queue.run_repeating(
         force_unmute_guard,
-        interval=30,
+        interval=10,
         first=10
         )
     application.run_webhook(
