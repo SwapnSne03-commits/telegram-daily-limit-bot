@@ -191,7 +191,7 @@ async def unmute_user(context: ContextTypes.DEFAULT_TYPE):
 async def force_temp_mute(context, group_id, user_id):
     from datetime import datetime, timedelta, timezone
 
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
     unmute_time = now + timedelta(seconds=30)
 
     await context.bot.restrict_chat_member(
@@ -199,8 +199,7 @@ async def force_temp_mute(context, group_id, user_id):
         user_id=user_id,
         permissions=ChatPermissions(
             can_send_messages=False
-        ),
-        until_date=unmute_time
+        )
     )
 
     force_muted_col.update_one(
@@ -216,44 +215,48 @@ async def force_temp_mute(context, group_id, user_id):
         },
         upsert=True
     )
+    print(f"Muted {user_id} in {group_id} until {unmute_time}")
 
 async def force_unmute_guard(context: ContextTypes.DEFAULT_TYPE):
-    from datetime import datetime, timezone
+    try:
+        from datetime import datetime
 
-    now = datetime.now(timezone.utc)
+        now = datetime.utcnow()
 
-    expired_users = list(force_muted_col.find({
-        "unmute_at": {"$lte": now}
-    }))
+        expired_users = list(force_muted_col.find({
+            "unmute_at": {"$lte": now}
+        }))
 
-    for user in expired_users:
-        try:
-            await context.bot.restrict_chat_member(
-                chat_id=user["group_id"],
-                user_id=user["user_id"],
-                permissions=ChatPermissions(
-                    can_send_messages=True,
-                    can_send_audios=True,
-                    can_send_documents=True,
-                    can_send_photos=True,
-                    can_send_videos=True,
-                    can_send_video_notes=True,
-                    can_send_voice_notes=True,
-                    can_send_polls=True,
-                    can_send_other_messages=True,
-                    can_add_web_page_previews=True,
-                    can_invite_users=True, # ✅ Add Member allow
-                    can_pin_messages=True,
-                    can_change_info=True
+        for user in expired_users:
+            try:
+                await context.bot.restrict_chat_member(
+                    chat_id=user["group_id"],
+                    user_id=user["user_id"],
+                    permissions=ChatPermissions(
+                        can_send_messages=True,
+                        can_send_audios=True,
+                        can_send_documents=True,
+                        can_send_photos=True,
+                        can_send_videos=True,
+                        can_send_video_notes=True,
+                        can_send_voice_notes=True,
+                        can_send_polls=True,
+                        can_send_other_messages=True,
+                        can_add_web_page_previews=True,
+                        can_invite_users=True,
+                        can_pin_messages=True,
+                        can_change_info=True
+                    )
                 )
-            )
-        except Exception as e:
-            print(f"Guard unmute error: {e}")
+            except Exception as e:
+                print(f"UNMUTE ERROR: {e}")
 
-        force_muted_col.delete_one({
-            "_id": user["_id"]
-        })
-    
+            force_muted_col.delete_one({
+                "_id": user["_id"]
+            })
+
+    except Exception as e:
+        print("GUARD ERROR:", e)
 
 async def force_unmute_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
