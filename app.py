@@ -120,32 +120,21 @@ async def ext_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     group_id = update.effective_chat.id
 
+    args = context.args.copy()
+
     target_id = None
     target_name = None
-    args = context.args.copy()
 
     # ---------------- USER DETECT ----------------
 
-    # ---- Case 1: Reply ----
+    # ✔ Case 1: Reply
     if message.reply_to_message:
         target = message.reply_to_message.from_user
         target_id = target.id
         target_name = target.full_name
 
-    # ---- Case 2: Mention (text_mention) ----
-    elif message.entities:
-        for entity in message.entities:
-            if entity.type == "text_mention":
-                target_id = entity.user.id
-                target_name = entity.user.full_name
-                break
-
-    # ---- Case 3: ID ----
-    if not target_id:
-        if not args:
-            await message.reply_text("Reply / mention / user_id use করুন")
-            return
-
+    # ✔ Case 2: ID
+    elif args:
         try:
             target_id = int(args[0])
             target_name = str(target_id)
@@ -153,6 +142,10 @@ async def ext_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             await message.reply_text("Invalid user ID")
             return
+
+    else:
+        await message.reply_text("Reply বা /ext_up user_id limit [time]")
+        return
 
     # ---------------- LIMIT ----------------
 
@@ -210,7 +203,7 @@ async def ext_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if expire_time:
         await message.reply_text(
-            f"✅ {target_name} → limit {new_limit} (⏳ temporary)"
+            f"✅ {target_name} → limit {new_limit} (⏳ {args[0] if args else ''})"
         )
     else:
         await message.reply_text(
