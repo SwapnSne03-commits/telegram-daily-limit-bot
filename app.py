@@ -53,12 +53,15 @@ button = InlineKeyboardMarkup([
     [InlineKeyboardButton("❦︎ ʀᴇǫᴜᴇsᴛ ʜᴇʀᴇ ❦︎", url="https://t.me/graduate_request_pro")]
 ])
 # ---------------- DATABASE (MongoDB) ----------------
-async def auto_delete_txt(msg, context, delay=60):
+async def auto_delete_txt(message, context, delay=60):
+    chat_id = message.chat_id
+    message_id = message.message_id
+
     async def delete_msg(ctx):
         try:
-            await msg.delete()
-        except:
-            pass
+            await ctx.bot.delete_message(chat_id, message_id)
+        except Exception as e:
+            print("DELETE ERROR:", e)
 
     context.job_queue.run_once(delete_msg, delay)
 
