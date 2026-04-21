@@ -360,6 +360,11 @@ async def group_on(update, context):
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
 
+    group = groups_col.find_one({"group_id": chat_id})
+    if not group:
+        await update.message.reply_text("❌ This group is not authorized")
+        return
+        
     if not await is_group_admin(context, chat_id, user_id):
         await update.message.reply_text("❌ Only admins allowed")
         return
@@ -370,6 +375,7 @@ async def group_on(update, context):
 
     permissions = ChatPermissions(
         can_send_messages=True,
+        can_invite_users=True,
         can_send_audios=current.can_send_audios,
         can_send_documents=current.can_send_documents,
         can_send_photos=current.can_send_photos,
@@ -383,11 +389,16 @@ async def group_on(update, context):
 
     await context.bot.set_chat_permissions(chat_id, permissions)
 
-    await update.message.reply_text("✅ Send Messages ENABLED")
+    await update.message.reply_text("✅ <b>GROUP IS OPEN NOW</b>")
 
 async def group_off(update, context):
+
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
+
+    group = groups_col.find_one({"group_id": chat_id})
+    if not group:
+        return
 
     if not await is_group_admin(context, chat_id, user_id):
         return
@@ -397,6 +408,7 @@ async def group_off(update, context):
 
     permissions = ChatPermissions(
         can_send_messages=False,
+        can_invite_users=True,
         can_send_audios=current.can_send_audios,
         can_send_documents=current.can_send_documents,
         can_send_photos=current.can_send_photos,
@@ -410,7 +422,7 @@ async def group_off(update, context):
 
     await context.bot.set_chat_permissions(chat_id, permissions)
 
-    await update.message.reply_text("⛔ Send Messages DISABLED")
+    await update.message.reply_text("‼️ <b>GROUP IS TEMPORARY CLOSED NOW ‼️</b>")
 
 # ---------------- COMMANDS ----------------
 async def bot_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -482,6 +494,32 @@ async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_log(
         context,
         f"✅ New Group Authorized\nGroup ID: {group_id}\nAuthorized By: {update.effective_user.full_name}\nUser ID: {update.effective_user.id}"
+    )
+
+async def rem_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        return
+
+    if not context.args:
+        await update.message.reply_text("Usage: /rem_grp [group_id]")
+        return
+
+    try:
+        group_id = int(context.args[0])
+    except:
+        await update.message.reply_text("Invalid group ID")
+        return
+
+    result = groups_col.delete_one({"group_id": group_id})
+
+    if result.deleted_count:
+        await update.message.reply_text("❌ Group removed from authorized list")
+    else:
+        await update.message.reply_text("Group not found")
+
+    await send_log(
+        context,
+        f"❌ Group Removed\nGroup ID: {group_id}\nRemoved By: {update.effective_user.id}"
     )
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -913,6 +951,7 @@ def main():
     application.add_handler(CommandHandler("renew", renew))
     application.add_handler(CommandHandler("grp_setting", grp_setting))
     application.add_handler(CommandHandler("Add_grp", add_group))
+    application.add_handler(CommandHandler("rem_grp", rem_group))
     application.add_handler(CommandHandler("cmd", cmd_list))
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("up_admin", up_admin))
