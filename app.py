@@ -122,7 +122,7 @@ async def ext_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     target_id = None
     target_name = None
-    new_limit = None
+    args = context.args
 
     # ---- Case 1: Reply ----
     if message.reply_to_message:
@@ -130,53 +130,43 @@ async def ext_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
         target_id = target.id
         target_name = target.full_name
 
-        if not context.args:
-            await message.reply_text("Usage: reply + /ext_up [limit]")
-            return
-
+    # ---- Case 2: ID ----
+    elif args:
         try:
-            new_limit = int(context.args[0])
-        except:
-            await message.reply_text("Invalid limit value.")
-            return
-
-    # ---- Case 2: Mention entity ----
-    elif message.entities:
-        for entity in message.entities:
-            if entity.type == "text_mention":
-                target_id = entity.user.id
-                target_name = entity.user.full_name
-                break
-
-        if not target_id:
-            await message.reply_text("Reply or mention a valid user.")
-            return
-
-        if context.args:
-            try:
-                new_limit = int(context.args[-1])
-            except:
-                await message.reply_text("Invalid limit value.")
-                return
-        else:
-            await message.reply_text("Usage: /ext_up @user [limit]")
-            return
-
-    # ---- Case 3: ID দিয়ে ----
-    elif context.args and len(context.args) >= 2:
-        try:
-            target_id = int(context.args[0])
-            new_limit = int(context.args[1])
+            target_id = int(args[0])
             target_name = str(target_id)
+            args = args[1:]
         except:
-            await message.reply_text("Usage: /ext_up [id] [limit]")
+            await message.reply_text("Reply or valid user ID ব্যবহার করুন")
             return
 
     else:
-        await message.reply_text("Usage: reply or /ext_up [id/@mention] [limit]")
+        await message.reply_text("Reply বা /ext_up user_id limit [time]")
         return
 
-    # ---- Ensure user exists in DB ----
+    # ---- Limit ----
+    if not args:
+        await message.reply_text("Limit দিতে হবে")
+        return
+
+    try:
+        new_limit = int(args[0])
+    except:
+        await message.reply_text("Invalid limit value")
+        return
+
+    # ---- Optional Expire Time ----
+    expire_time = None
+
+    if len(args) >= 2:
+        try:
+            expire_delta = parse_time(args[1])
+            expire_time = (now() + expire_delta).isoformat()
+        except:
+            await message.reply_text("Invalid time format (5m / 2h / 1d)")
+            return
+
+    # ---- Ensure user exists ----
     users_col.update_one(
         {"user_id": target_id, "group_id": group_id},
         {"$setOnInsert": {
@@ -184,6 +174,7 @@ async def ext_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "group_id": group_id,
             "message_count": 0,
             "extended_limit": None,
+            "ext_expire": None,
             "is_special": False,
             "rem_until": None,
             "last_reset": now().date().isoformat()
@@ -191,31 +182,73 @@ async def ext_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
         upsert=True
     )
 
-    # ---- Apply Extended Limit ----
+    # ---- Apply ----
     users_col.update_one(
         {"user_id": target_id, "group_id": group_id},
-        {"$set": {"extended_limit": new_limit}}
+        {"$set": {
+            "extended_limit": new_limit,
+            "ext_expire": expire_time
+        }}
     )
 
-    await message.reply_text(
-        f"✅ {target_name} এর নতুন limit set করা হয়েছে: {new_limit}"
-    )  
+    # ---- Response ----
+    if expire_time:
+        await message.reply_text(
+            f"✅ {target_name} → limit {new_limit} (temporary)"
+        )
+    else:
+        await message.reply_text(
+            f"✅ {target_name} → limit {new_limit} (permanent)"
+        )
 
 def get_limit(user_id, group_id):
-    # Get group base limit
     group = groups_col.find_one({"group_id": group_id})
-    base_limit = group["message_limit"] if group and "message_limit" in group else 3
+    base_limit = group["message_limit"] if group else 3
 
-    # Get user extended limit
     user = users_col.find_one({
         "user_id": user_id,
         "group_id": group_id
     })
 
-    if user and user.get("extended_limit"):
-        return user["extended_limit"]
+    if user:
+        ext = user.get("extended_limit")
+        exp = user.get("ext_expire")
+
+        if ext:
+            # ---- Check expiry ----
+            if exp:
+                if now() > datetime.fromisoformat(exp):
+                    # Expired → reset
+                    users_col.update_one(
+                        {"user_id": user_id, "group_id": group_id},
+                        {"$set": {
+                            "extended_limit": None,
+                            "ext_expire": None
+                        }}
+                    )
+                    return base_limit
+                else:
+                    return ext
+            else:
+                return ext
 
     return base_limit
+
+async def reset_ext_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        return
+
+    group_id = update.effective_chat.id
+
+    users_col.update_many(
+        {"group_id": group_id},
+        {"$set": {
+            "extended_limit": None,
+            "ext_expire": None
+        }}
+    )
+
+    await update.message.reply_text("All extended limits reset.")
 
 # ---------------- MESSAGE TRACKER ----------------
 
@@ -799,6 +832,7 @@ def main():
     # -------- Commands --------
     application.add_handler(CommandHandler("stats", stats))
     application.add_handler(CommandHandler("ext_up", ext_up))
+    application.add_handler(CommandHandler("reset_ext_all", reset_ext_all))
     application.add_handler(CommandHandler("Sp_mem", sp_mem))
     application.add_handler(CommandHandler("Ext_lim", ext_lim))
     application.add_handler(CommandHandler("Mute", mute_toggle))
