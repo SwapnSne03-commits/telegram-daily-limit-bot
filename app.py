@@ -117,12 +117,14 @@ async def ext_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_up_admin(update.effective_user.id):
         return
 
-    group_id = update.effective_chat.id
     message = update.message
+    group_id = update.effective_chat.id
 
     target_id = None
     target_name = None
-    args = context.args
+    args = context.args.copy()
+
+    # ---------------- USER DETECT ----------------
 
     # ---- Case 1: Reply ----
     if message.reply_to_message:
@@ -130,43 +132,55 @@ async def ext_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
         target_id = target.id
         target_name = target.full_name
 
-    # ---- Case 2: ID ----
-    elif args:
+    # ---- Case 2: Mention (text_mention) ----
+    elif message.entities:
+        for entity in message.entities:
+            if entity.type == "text_mention":
+                target_id = entity.user.id
+                target_name = entity.user.full_name
+                break
+
+    # ---- Case 3: ID ----
+    if not target_id:
+        if not args:
+            await message.reply_text("Reply / mention / user_id use করুন")
+            return
+
         try:
             target_id = int(args[0])
             target_name = str(target_id)
-            args = args[1:]
+            args.pop(0)
         except:
-            await message.reply_text("Reply or valid user ID ব্যবহার করুন")
+            await message.reply_text("Invalid user ID")
             return
 
-    else:
-        await message.reply_text("Reply বা /ext_up user_id limit [time]")
-        return
+    # ---------------- LIMIT ----------------
 
-    # ---- Limit ----
     if not args:
         await message.reply_text("Limit দিতে হবে")
         return
 
     try:
         new_limit = int(args[0])
+        args.pop(0)
     except:
         await message.reply_text("Invalid limit value")
         return
 
-    # ---- Optional Expire Time ----
+    # ---------------- OPTIONAL TIME ----------------
+
     expire_time = None
 
-    if len(args) >= 2:
+    if args:
         try:
-            expire_delta = parse_time(args[1])
+            expire_delta = parse_time(args[0])
             expire_time = (now() + expire_delta).isoformat()
         except:
             await message.reply_text("Invalid time format (5m / 2h / 1d)")
             return
 
-    # ---- Ensure user exists ----
+    # ---------------- ENSURE USER ----------------
+
     users_col.update_one(
         {"user_id": target_id, "group_id": group_id},
         {"$setOnInsert": {
@@ -182,7 +196,8 @@ async def ext_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
         upsert=True
     )
 
-    # ---- Apply ----
+    # ---------------- APPLY ----------------
+
     users_col.update_one(
         {"user_id": target_id, "group_id": group_id},
         {"$set": {
@@ -191,14 +206,15 @@ async def ext_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }}
     )
 
-    # ---- Response ----
+    # ---------------- RESPONSE ----------------
+
     if expire_time:
         await message.reply_text(
-            f"✅ {target_name} → limit {new_limit} (temporary)"
+            f"✅ {target_name} → limit {new_limit} (⏳ temporary)"
         )
     else:
         await message.reply_text(
-            f"✅ {target_name} → limit {new_limit} (permanent)"
+            f"✅ {target_name} → limit {new_limit} (♾ permanent)"
         )
 
 def get_limit(user_id, group_id):
