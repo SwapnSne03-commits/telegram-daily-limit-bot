@@ -1,7 +1,7 @@
 import os
 from datetime import datetime, timedelta
 from telegram.ext import ChatJoinRequestHandler
-
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram import Update, ChatPermissions
 from telegram.ext import (
     Application,
@@ -48,20 +48,19 @@ PORT = int(os.environ.get("PORT", 10000))
 RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")
 LOG_CHAT_ID = int(os.getenv("LOG_CHAT_ID"))
 
-# ---------------- DATABASE ----------------
+# ---------------- Button ----------------
+button = InlineKeyboardMarkup([
+    [InlineKeyboardButton("❦︎ ʀᴇǫᴜᴇsᴛ ʜᴇʀᴇ ❦︎", url="https://t.me/graduate_request_pro")]
+])
 # ---------------- DATABASE (MongoDB) ----------------
-
-async def auto_delete_txt(message, context, time=30):
-    def delete_msg(ctx):
+async def auto_delete_txt(msg, context, delay=60):
+    async def delete_msg(ctx):
         try:
-            ctx.bot.delete_message(
-                chat_id=message.chat_id,
-                message_id=message.message_id
-            )
+            await msg.delete()
         except:
             pass
 
-    context.job_queue.run_once(delete_msg, when=time)
+    context.job_queue.run_once(delete_msg, delay)
 
 # ---------------- LOGGING ----------------
 
@@ -325,7 +324,8 @@ async def track_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ---- Warning before max ----
     if count == limit:
         msg = await update.message.reply_html(
-            f"⚠️ <b>প্রিয় {user.mention_html()},\nআপনি কেবলমাত্র আর ১টি মুভি/সিরিজ রিকোয়েস্ট করতে পারবেন!\n\nধন্যবাদ🙏</b>"
+            f"⚠️ <b>প্রিয় {user.mention_html()},\nআপনি কেবলমাত্র আর ১টি মুভি/সিরিজ রিকোয়েস্ট করতে পারবেন!\n\nপরবর্তী রিকোয়েস্ট নিচের গ্রুপে করুন 👇</b>",
+            reply_markup=button
         )
         await auto_delete_txt(msg, context)
 
@@ -335,7 +335,8 @@ async def track_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
         mute_time = group.get("mute_time", "5m")
 
         msg = await update.message.reply_html(
-            f"🚫 প্রিয় {user.mention_html()}\nআপনি আজকের সর্বোচ্চ Movie Request limit এ পৌঁছে গেছেন। আবার আগামীকাল Request করবেন!\n\nধন্যবাদ"
+            f"🚫 প্রিয় {user.mention_html()}\nআপনি আজকের সর্বোচ্চ Movie Request limit এ পৌঁছে গেছেন। আবার আগামীকাল এই গ্রুপে Request করবেন!\n\n আরো মুভির প্রয়োজন হলে নিচের গ্রুপে জয়েন হয়ে রিকুয়েট করুন 👇",
+            reply_markup=button
         )
         await auto_delete_txt(msg, context)
 
@@ -389,7 +390,7 @@ async def group_on(update, context):
 
     await context.bot.set_chat_permissions(chat_id, permissions)
 
-    await update.message.reply_text("✅ <b>GROUP IS OPEN NOW</b>")
+    await update.message.reply_text("✅ GROUP IS OPEN NOW")
 
 async def group_off(update, context):
 
@@ -422,7 +423,7 @@ async def group_off(update, context):
 
     await context.bot.set_chat_permissions(chat_id, permissions)
 
-    await update.message.reply_text("‼️ <b>GROUP IS TEMPORARY CLOSED NOW ‼️</b>")
+    await update.message.reply_text("‼️ GROUP IS TEMPORARY CLOSED NOW ‼️ ")
 
 # ---------------- COMMANDS ----------------
 async def bot_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
