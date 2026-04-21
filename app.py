@@ -349,6 +349,69 @@ async def track_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 until_date=until
             )
 
+async def is_group_admin(context, chat_id, user_id):
+    try:
+        member = await context.bot.get_chat_member(chat_id, user_id)
+        return member.status in ["administrator", "creator"]
+    except:
+        return False
+        
+async def group_on(update, context):
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+
+    if not await is_group_admin(context, chat_id, user_id):
+        await update.message.reply_text("❌ Only admins allowed")
+        return
+
+    # Get current permissions
+    chat = await context.bot.get_chat(chat_id)
+    current = chat.permissions
+
+    permissions = ChatPermissions(
+        can_send_messages=True,
+        can_send_audios=current.can_send_audios,
+        can_send_documents=current.can_send_documents,
+        can_send_photos=current.can_send_photos,
+        can_send_videos=current.can_send_videos,
+        can_send_video_notes=current.can_send_video_notes,
+        can_send_voice_notes=current.can_send_voice_notes,
+        can_send_polls=current.can_send_polls,
+        can_send_other_messages=current.can_send_other_messages,
+        can_add_web_page_previews=current.can_add_web_page_previews
+    )
+
+    await context.bot.set_chat_permissions(chat_id, permissions)
+
+    await update.message.reply_text("✅ Send Messages ENABLED")
+
+async def group_off(update, context):
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+
+    if not await is_group_admin(context, chat_id, user_id):
+        return
+
+    chat = await context.bot.get_chat(chat_id)
+    current = chat.permissions
+
+    permissions = ChatPermissions(
+        can_send_messages=False,
+        can_send_audios=current.can_send_audios,
+        can_send_documents=current.can_send_documents,
+        can_send_photos=current.can_send_photos,
+        can_send_videos=current.can_send_videos,
+        can_send_video_notes=current.can_send_video_notes,
+        can_send_voice_notes=current.can_send_voice_notes,
+        can_send_polls=current.can_send_polls,
+        can_send_other_messages=current.can_send_other_messages,
+        can_add_web_page_previews=current.can_add_web_page_previews
+    )
+
+    await context.bot.set_chat_permissions(chat_id, permissions)
+
+    await update.message.reply_text("⛔ Send Messages DISABLED")
+
 # ---------------- COMMANDS ----------------
 async def bot_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.my_chat_member:
@@ -854,6 +917,8 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("up_admin", up_admin))
     application.add_handler(CommandHandler("force_unmute_all", force_unmute_all))
+    application.add_handler(CommandHandler("group_on", group_on))
+    application.add_handler(CommandHandler("group_off", group_off))
     application.add_handler(
         ChatMemberHandler(bot_added, ChatMemberHandler.MY_CHAT_MEMBER)
     )
