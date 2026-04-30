@@ -27,6 +27,7 @@ from force_sub import (
     handle_join_request,
     handle_member_update,
     force_unmute_all,
+    cancel,
     force_unmute_guard,
     WAITING_CHANNEL_ID
 )
@@ -900,6 +901,11 @@ async def post_init(application):
         text="🚀 Bot restarted successfully."
     )
 
+async def invalid_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "❌ Invalid input!\n\nPlease send a valid Channel ID.\nExample: -100xxxxxxxxxx\nOr use /cancel"
+    )
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_log(
         context,
@@ -917,10 +923,10 @@ def main():
         entry_points=[CommandHandler("Sub_force", sub_force)],
         states={
             CHOOSING_TYPE: [CallbackQueryHandler(choose_type)],
-            WAITING_CHANNEL_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_channel)],
+            WAITING_CHANNEL_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_channel),MessageHandler(~filters.TEXT, invalid_input)],
         },
-        fallbacks=[]
-    )
+        fallbacks=[CommandHandler("cancel", cancel)]
+     )
 
     application.add_handler(conv)
 
