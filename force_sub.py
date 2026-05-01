@@ -534,8 +534,8 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id=group_id,
         text=(
             f"⚠️ <b>Hey {user.mention_html()}</b>\n\n"
-            "<b>Request করার আগে আপনাকে নিচে দেওয়া চ্যানেলগুলি অবশ্যই Join করুন,\n\n"
-            "ᴘʟᴇᴀsᴇ ᴊᴏɪɴ ᴛʜᴇ ʙᴇʟᴏᴡ ᴄʜᴀɴɴᴇʟs ᴀɴᴅ ʀᴇǫᴜᴇsᴛ ᴀɢᴀɪɴ..</b>"
+            "<b>Request করার আগে নিচে দেওয়া চ্যানেলগুলি অবশ্যই Join করুন,\n\n"
+            "ᴘʟᴇᴀsᴇ ᴊᴏɪɴ ᴛʜᴇ ʙᴇʟᴏᴡ ᴄʜᴀɴɴᴇʟs ᴀɴᴅ ʀᴇǫᴜᴇsᴛ ᴀɢᴀɪɴ..👇</b>"
         ),
         reply_markup=keyboard,
         parse_mode="HTML"
