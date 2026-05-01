@@ -1,7 +1,7 @@
 import os
 from datetime import datetime, timedelta
 from telegram.ext import ChatJoinRequestHandler
-
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram import Update, ChatPermissions
 from telegram.ext import (
     Application,
@@ -27,6 +27,7 @@ from force_sub import (
     handle_join_request,
     handle_member_update,
     force_unmute_all,
+    cancel,
     force_unmute_guard,
     WAITING_CHANNEL_ID
 )
@@ -48,20 +49,22 @@ PORT = int(os.environ.get("PORT", 10000))
 RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")
 LOG_CHAT_ID = int(os.getenv("LOG_CHAT_ID"))
 
-# ---------------- DATABASE ----------------
+# ---------------- Button ----------------
+button = InlineKeyboardMarkup([
+    [InlineKeyboardButton("❦︎ ʀᴇǫᴜᴇsᴛ ʜᴇʀᴇ ❦︎", url="https://t.me/graduate_request_pro")]
+])
 # ---------------- DATABASE (MongoDB) ----------------
+async def auto_delete_txt(message, context, delay=60):
+    chat_id = message.chat_id
+    message_id = message.message_id
 
-async def auto_delete_txt(message, context, time=30):
-    def delete_msg(ctx):
+    async def delete_msg(ctx):
         try:
-            ctx.bot.delete_message(
-                chat_id=message.chat_id,
-                message_id=message.message_id
-            )
-        except:
-            pass
+            await ctx.bot.delete_message(chat_id, message_id)
+        except Exception as e:
+            print("DELETE ERROR:", e)
 
-    context.job_queue.run_once(delete_msg, when=time)
+    context.job_queue.run_once(delete_msg, delay)
 
 # ---------------- LOGGING ----------------
 
@@ -117,66 +120,63 @@ async def ext_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_up_admin(update.effective_user.id):
         return
 
-    group_id = update.effective_chat.id
     message = update.message
+    group_id = update.effective_chat.id
+
+    args = context.args.copy()
 
     target_id = None
     target_name = None
-    new_limit = None
 
-    # ---- Case 1: Reply ----
+    # ---------------- USER DETECT ----------------
+
+    # ✔ Case 1: Reply
     if message.reply_to_message:
         target = message.reply_to_message.from_user
         target_id = target.id
         target_name = target.full_name
 
-        if not context.args:
-            await message.reply_text("Usage: reply + /ext_up [limit]")
-            return
-
+    # ✔ Case 2: ID
+    elif args:
         try:
-            new_limit = int(context.args[0])
-        except:
-            await message.reply_text("Invalid limit value.")
-            return
-
-    # ---- Case 2: Mention entity ----
-    elif message.entities:
-        for entity in message.entities:
-            if entity.type == "text_mention":
-                target_id = entity.user.id
-                target_name = entity.user.full_name
-                break
-
-        if not target_id:
-            await message.reply_text("Reply or mention a valid user.")
-            return
-
-        if context.args:
-            try:
-                new_limit = int(context.args[-1])
-            except:
-                await message.reply_text("Invalid limit value.")
-                return
-        else:
-            await message.reply_text("Usage: /ext_up @user [limit]")
-            return
-
-    # ---- Case 3: ID দিয়ে ----
-    elif context.args and len(context.args) >= 2:
-        try:
-            target_id = int(context.args[0])
-            new_limit = int(context.args[1])
+            target_id = int(args[0])
             target_name = str(target_id)
+            args.pop(0)
         except:
-            await message.reply_text("Usage: /ext_up [id] [limit]")
+            await message.reply_text("Invalid user ID")
             return
 
     else:
-        await message.reply_text("Usage: reply or /ext_up [id/@mention] [limit]")
+        await message.reply_text("Reply বা /ext_up user_id limit [time]")
         return
 
-    # ---- Ensure user exists in DB ----
+    # ---------------- LIMIT ----------------
+
+    if not args:
+        await message.reply_text("Limit দিতে হবে")
+        return
+
+    try:
+        new_limit = int(args[0])
+        args.pop(0)
+    except:
+        await message.reply_text("Invalid limit value")
+        return
+
+    # ---------------- OPTIONAL TIME ----------------
+
+    expire_time = None
+
+    if args:
+        try:
+            expire_delta = parse_time(args[0])
+            expire_time = (now() + expire_delta).isoformat()
+        except:
+            await message.reply_text("Invalid time format (5m / 2h / 1d)")
+            return
+
+    # ---------------- ENSURE USER ----------------
+
     users_col.update_one(
         {"user_id": target_id, "group_id": group_id},
         {"$setOnInsert": {
@@ -184,6 +184,7 @@ async def ext_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "group_id": group_id,
             "message_count": 0,
             "extended_limit": None,
+            "ext_expire": None,
             "is_special": False,
             "rem_until": None,
             "last_reset": now().date().isoformat()
@@ -191,31 +192,75 @@ async def ext_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
         upsert=True
     )
 
-    # ---- Apply Extended Limit ----
+    # ---------------- APPLY ----------------
+
     users_col.update_one(
         {"user_id": target_id, "group_id": group_id},
-        {"$set": {"extended_limit": new_limit}}
+        {"$set": {
+            "extended_limit": new_limit,
+            "ext_expire": expire_time
+        }}
     )
 
-    await message.reply_text(
-        f"✅ {target_name} এর নতুন limit set করা হয়েছে: {new_limit}"
-    )  
+    # ---------------- RESPONSE ----------------
+
+    if expire_time:
+        await message.reply_text(
+            f"✅ {target_name} → limit {new_limit} (⏳ {args[0] if args else ''})"
+        )
+    else:
+        await message.reply_text(
+            f"✅ {target_name} → limit {new_limit} (♾ permanent)"
+        )
 
 def get_limit(user_id, group_id):
-    # Get group base limit
     group = groups_col.find_one({"group_id": group_id})
-    base_limit = group["message_limit"] if group and "message_limit" in group else 3
+    base_limit = group["message_limit"] if group else 3
 
-    # Get user extended limit
     user = users_col.find_one({
         "user_id": user_id,
         "group_id": group_id
     })
 
-    if user and user.get("extended_limit"):
-        return user["extended_limit"]
+    if user:
+        ext = user.get("extended_limit")
+        exp = user.get("ext_expire")
+
+        if ext:
+            # ---- Check expiry ----
+            if exp:
+                if now() > datetime.fromisoformat(exp):
+                    # Expired → reset
+                    users_col.update_one(
+                        {"user_id": user_id, "group_id": group_id},
+                        {"$set": {
+                            "extended_limit": None,
+                            "ext_expire": None
+                        }}
+                    )
+                    return base_limit
+                else:
+                    return ext
+            else:
+                return ext
 
     return base_limit
+
+async def reset_ext_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        return
+
+    group_id = update.effective_chat.id
+
+    users_col.update_many(
+        {"group_id": group_id},
+        {"$set": {
+            "extended_limit": None,
+            "ext_expire": None
+        }}
+    )
+
+    await update.message.reply_text("All extended limits reset.")
 
 # ---------------- MESSAGE TRACKER ----------------
 
@@ -283,7 +328,8 @@ async def track_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ---- Warning before max ----
     if count == limit:
         msg = await update.message.reply_html(
-            f"⚠️ <b>প্রিয় {user.mention_html()},\nআপনি কেবলমাত্র আর ১টি মুভি/সিরিজ রিকোয়েস্ট করতে পারবেন!\n\nধন্যবাদ🙏</b>"
+            f"⚠️ <b>প্রিয় {user.mention_html()},\nআপনি কেবলমাত্র আর ১টি মুভি/সিরিজ রিকোয়েস্ট করতে পারবেন!\n\nপরবর্তী রিকোয়েস্ট নিচের গ্রুপে করুন 👇</b>",
+            reply_markup=button
         )
         await auto_delete_txt(msg, context)
 
@@ -293,7 +339,8 @@ async def track_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
         mute_time = group.get("mute_time", "5m")
 
         msg = await update.message.reply_html(
-            f"🚫 প্রিয় {user.mention_html()}\nআপনি আজকের সর্বোচ্চ Movie Request limit এ পৌঁছে গেছেন। আবার আগামীকাল Request করবেন!\n\nধন্যবাদ"
+            f"🚫 প্রিয় {user.mention_html()}\nআপনি আজকের সর্বোচ্চ Movie Request limit এ পৌঁছে গেছেন। আবার আগামীকাল এই গ্রুপে Request করবেন!\n\n আরো মুভির প্রয়োজন হলে নিচের গ্রুপে জয়েন হয়ে রিকুয়েট করুন 👇",
+            reply_markup=button
         )
         await auto_delete_txt(msg, context)
 
@@ -306,6 +353,81 @@ async def track_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 permissions=ChatPermissions(can_send_messages=False),
                 until_date=until
             )
+
+async def is_group_admin(context, chat_id, user_id):
+    try:
+        member = await context.bot.get_chat_member(chat_id, user_id)
+        return member.status in ["administrator", "creator"]
+    except:
+        return False
+        
+async def group_on(update, context):
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+
+    group = groups_col.find_one({"group_id": chat_id})
+    if not group:
+        await update.message.reply_text("❌ This group is not authorized")
+        return
+        
+    if not await is_group_admin(context, chat_id, user_id):
+        await update.message.reply_text("❌ Only admins allowed")
+        return
+
+    # Get current permissions
+    chat = await context.bot.get_chat(chat_id)
+    current = chat.permissions
+
+    permissions = ChatPermissions(
+        can_send_messages=True,
+        can_invite_users=True,
+        can_send_audios=current.can_send_audios,
+        can_send_documents=current.can_send_documents,
+        can_send_photos=current.can_send_photos,
+        can_send_videos=current.can_send_videos,
+        can_send_video_notes=current.can_send_video_notes,
+        can_send_voice_notes=current.can_send_voice_notes,
+        can_send_polls=current.can_send_polls,
+        can_send_other_messages=current.can_send_other_messages,
+        can_add_web_page_previews=current.can_add_web_page_previews
+    )
+
+    await context.bot.set_chat_permissions(chat_id, permissions)
+
+    await update.message.reply_text("✅ GROUP IS OPEN NOW")
+
+async def group_off(update, context):
+
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+
+    group = groups_col.find_one({"group_id": chat_id})
+    if not group:
+        return
+
+    if not await is_group_admin(context, chat_id, user_id):
+        return
+
+    chat = await context.bot.get_chat(chat_id)
+    current = chat.permissions
+
+    permissions = ChatPermissions(
+        can_send_messages=False,
+        can_invite_users=True,
+        can_send_audios=current.can_send_audios,
+        can_send_documents=current.can_send_documents,
+        can_send_photos=current.can_send_photos,
+        can_send_videos=current.can_send_videos,
+        can_send_video_notes=current.can_send_video_notes,
+        can_send_voice_notes=current.can_send_voice_notes,
+        can_send_polls=current.can_send_polls,
+        can_send_other_messages=current.can_send_other_messages,
+        can_add_web_page_previews=current.can_add_web_page_previews
+    )
+
+    await context.bot.set_chat_permissions(chat_id, permissions)
+
+    await update.message.reply_text("‼️ GROUP IS TEMPORARY CLOSED NOW ‼️ ")
 
 # ---------------- COMMANDS ----------------
 async def bot_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -377,6 +499,32 @@ async def add_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_log(
         context,
         f"✅ New Group Authorized\nGroup ID: {group_id}\nAuthorized By: {update.effective_user.full_name}\nUser ID: {update.effective_user.id}"
+    )
+
+async def rem_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        return
+
+    if not context.args:
+        await update.message.reply_text("Usage: /rem_grp [group_id]")
+        return
+
+    try:
+        group_id = int(context.args[0])
+    except:
+        await update.message.reply_text("Invalid group ID")
+        return
+
+    result = groups_col.delete_one({"group_id": group_id})
+
+    if result.deleted_count:
+        await update.message.reply_text("❌ Group removed from authorized list")
+    else:
+        await update.message.reply_text("Group not found")
+
+    await send_log(
+        context,
+        f"❌ Group Removed\nGroup ID: {group_id}\nRemoved By: {update.effective_user.id}"
     )
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -753,6 +901,11 @@ async def post_init(application):
         text="🚀 Bot restarted successfully."
     )
 
+async def invalid_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "❌ Invalid input!\n\nPlease send a valid Channel ID.\nExample: -100xxxxxxxxxx\nOr use /cancel"
+    )
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_log(
         context,
@@ -770,10 +923,10 @@ def main():
         entry_points=[CommandHandler("Sub_force", sub_force)],
         states={
             CHOOSING_TYPE: [CallbackQueryHandler(choose_type)],
-            WAITING_CHANNEL_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_channel)],
+            WAITING_CHANNEL_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_channel),MessageHandler(~filters.TEXT, invalid_input)],
         },
-        fallbacks=[]
-    )
+        fallbacks=[CommandHandler("cancel", cancel)]
+     )
 
     application.add_handler(conv)
 
@@ -799,6 +952,7 @@ def main():
     # -------- Commands --------
     application.add_handler(CommandHandler("stats", stats))
     application.add_handler(CommandHandler("ext_up", ext_up))
+    application.add_handler(CommandHandler("reset_ext_all", reset_ext_all))
     application.add_handler(CommandHandler("Sp_mem", sp_mem))
     application.add_handler(CommandHandler("Ext_lim", ext_lim))
     application.add_handler(CommandHandler("Mute", mute_toggle))
@@ -807,10 +961,13 @@ def main():
     application.add_handler(CommandHandler("renew", renew))
     application.add_handler(CommandHandler("grp_setting", grp_setting))
     application.add_handler(CommandHandler("Add_grp", add_group))
+    application.add_handler(CommandHandler("rem_grp", rem_group))
     application.add_handler(CommandHandler("cmd", cmd_list))
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("up_admin", up_admin))
     application.add_handler(CommandHandler("force_unmute_all", force_unmute_all))
+    application.add_handler(CommandHandler("group_on", group_on))
+    application.add_handler(CommandHandler("group_off", group_off))
     application.add_handler(
         ChatMemberHandler(bot_added, ChatMemberHandler.MY_CHAT_MEMBER)
     )

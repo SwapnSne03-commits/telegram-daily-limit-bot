@@ -34,6 +34,12 @@ CHOOSING_TYPE, WAITING_CHANNEL_ID = range(2)
 
 
 # ================= OWNER PANEL =================
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.clear()
+
+    await update.message.reply_text("❌ Process cancelled.")
+
+    return ConversationHandler.END
 
 async def sub_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
@@ -74,20 +80,38 @@ async def choose_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     return WAITING_CHANNEL_ID
 
-
 async def save_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != OWNER_ID:
+    user_id = update.effective_user.id
+
+    if user_id != OWNER_ID:
         return ConversationHandler.END
 
-    try:
-        channel_id = int(update.message.text)
-    except:
-        await update.message.reply_text("Invalid Channel ID.")
-        return ConversationHandler.END
+    text = update.message.text.strip()
 
+    # ✅ Validate channel ID format
+    if not text.startswith("-100") or not text[1:].isdigit():
+        await update.message.reply_text(
+            "❌ Invalid Channel ID!\n\n"
+            "Example:\n-1001234567890\n\n"
+            "Send again or use /cancel"
+        )
+        return WAITING_CHANNEL_ID
+
+    channel_id = int(text)
     group_id = update.effective_chat.id
     sub_type = context.user_data.get("sub_type")
 
+    # 🔥 Prevent duplicate
+    existing = force_channels_col.find_one({
+        "group_id": group_id,
+        "channel_id": channel_id
+    })
+
+    if existing:
+        await update.message.reply_text("⚠️ Channel already added.")
+        return ConversationHandler.END
+
+    # ✅ Insert
     force_channels_col.insert_one({
         "group_id": group_id,
         "channel_id": channel_id,
@@ -95,6 +119,7 @@ async def save_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "active": True
     })
 
+    # ✅ Enable force sub
     force_config_col.update_one(
         {"group_id": group_id},
         {"$set": {"enabled": True}},
@@ -102,12 +127,12 @@ async def save_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     await update.message.reply_text(
-        "Force channel added.\n\n"
-        "Tip: Use /clear_req if adding new channels."
+        "✅ Force channel added successfully.\n\n"
+        "Use /Sub_force to add more\n"
+        "Use /cancel to stop"
     )
 
     return ConversationHandler.END
-
 
 # ================= REMOVE & CONTROL =================
 
@@ -134,21 +159,23 @@ async def remove_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("Channel removed from this group.")
 
-
 async def force_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
         return
 
     group_id = update.effective_chat.id
 
+    # Disable system
     force_config_col.update_one(
         {"group_id": group_id},
         {"$set": {"enabled": False}},
         upsert=True
     )
 
-    await update.message.reply_text("Force Subscribe disabled for this group.")
+    # 🔥 CLEAR CHANNELS (IMPORTANT FIX)
+    force_channels_col.delete_many({"group_id": group_id})
 
+    await update.message.reply_text("❌ Force Subscribe fully removed.")
 
 async def clear_req(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
@@ -450,15 +477,15 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "group_id": group_id
             })
 
-            msg = await context.bot.send_message(
-                chat_id=group_id,
-                text=(
-                    f"🎉 <b> Hey {user.mention_html()}</b>\n\n"
-                    "<b>আমাদের চ্যানেলগুলি জয়েন করার জন্য আপনাকে অসংখ্য ধন্যবাদ 🙏.\n"
-                    "এভাবেই আমাদের পাশে থাকুন ও সুস্থ থাকুন ✨</b>"
-                ),
-                parse_mode="HTML"
-            )
+            #msg = await context.bot.send_message(
+                #chat_id=group_id,
+               # text=(
+                  #  f"🎉 <b> Hey {user.mention_html()}</b>\n\n"
+                   # "<b>আমাদের চ্যানেলগুলি জয়েন করার জন্য আপনাকে অসংখ্য ধন্যবাদ 🙏.\n"
+                  #  "এভাবেই আমাদের পাশে থাকুন ও সুস্থ থাকুন ✨</b>"
+                #),
+               # parse_mode="HTML"
+            #)
 
             context.job_queue.run_once(
                 lambda ctx: ctx.bot.delete_message(
@@ -483,19 +510,22 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buttons = []
 
     for ch in not_joined:
+        expire_time = int((datetime.utcnow() + timedelta(minutes=5)).timestamp())
+
         if ch["type"] == "req":
             invite = await context.bot.create_chat_invite_link(
-                ch["channel_id"],
-                creates_join_request=True
+                chat_id=ch["channel_id"],
+                creates_join_request=True,
+                expire_date=expire_time
             )
-
         else:
             invite = await context.bot.create_chat_invite_link(
-                ch["channel_id"]
+                chat_id=ch["channel_id"],
+                expire_date=expire_time
             )
 
         buttons.append([
-            InlineKeyboardButton("ᴊᴏɪɴ ᴏᴜʀ ᴄʜᴀɴɴᴇʟ", url=invite.invite_link)
+            InlineKeyboardButton(f"📢 ᴊᴏɪɴ ᴛʜɪs ᴄʜᴀɴɴᴇʟ - {len(buttons)+1}", url=invite.invite_link)
         ])
 
     keyboard = InlineKeyboardMarkup(buttons)
@@ -503,10 +533,9 @@ async def check_force(update: Update, context: ContextTypes.DEFAULT_TYPE):
     warn_msg = await context.bot.send_message(
         chat_id=group_id,
         text=(
-            f"⚠️ <b>{user.mention_html()}</b>\n\n"
-            "<b>Request করার আগে আপনাকে নিচে দেওয়া চ্যানেলগুলি অবশ্যই Join করতে হবে।\n\n"
-            "জয়েন করার পর আবার Request করুন।\n"
-            "আমরা আপনার Request এর জন্য অপেক্ষায় আছি..!!</b>"
+            f"⚠️ <b>Hey {user.mention_html()}</b>\n\n"
+            "<b>Request করার আগে নিচে দেওয়া চ্যানেলগুলি অবশ্যই Join করুন,\n\n"
+            "ᴘʟᴇᴀsᴇ ᴊᴏɪɴ ᴛʜᴇ ʙᴇʟᴏᴡ ᴄʜᴀɴɴᴇʟs ᴀɴᴅ ʀᴇǫᴜᴇsᴛ ᴀɢᴀɪɴ..👇</b>"
         ),
         reply_markup=keyboard,
         parse_mode="HTML"
